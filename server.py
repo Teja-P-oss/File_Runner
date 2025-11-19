@@ -2,6 +2,7 @@ import os
 import sys
 import stat
 import subprocess
+import signal
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -13,74 +14,49 @@ ROOT_DIR = os.getcwd()
 # Allowed root directories
 ALLOWED_ROOTS = ['Tests', 'Calibration', 'src']
 
+# Global registry for running processes { 'test_id': subprocess.Popen }
+active_tests = {}
+
 def get_directory_contents(rel_path):
-    """
-    Optimization: Non-recursive. 
-    Returns list of items in a specific directory only.
-    """
     abs_path = os.path.join(ROOT_DIR, rel_path)
-    
-    # Security check: ensure we don't traverse up out of root
     if not os.path.commonpath([ROOT_DIR, abs_path]) == ROOT_DIR:
         return []
-
     if not os.path.exists(abs_path):
         return []
-
     items = []
     try:
-        # Get entries
         entries = os.scandir(abs_path)
-        
-        # Sort: Directories first, then files, case-insensitive
         sorted_entries = sorted(entries, key=lambda e: (not e.is_dir(), e.name.lower()))
-        
         for entry in sorted_entries:
             items.append({
                 "name": entry.name,
-                "path": os.path.join(rel_path, entry.name).replace("\\", "/"), # Normalize for web
+                "path": os.path.join(rel_path, entry.name).replace("\\", "/"),
                 "type": "dir" if entry.is_dir() else "file"
             })
     except PermissionError:
         pass
-        
     return items
 
 @app.route('/api/files', methods=['GET'])
 def list_files():
-    """
-    Optimization: Returns contents of a specific path.
-    If no path is provided, returns the hardcoded root folders.
-    """
     req_path = request.args.get('path', '')
-    
     if not req_path:
-        # Root Level: Only return specific allowed folders
         data = []
         for folder in ALLOWED_ROOTS:
             full_path = os.path.join(ROOT_DIR, folder)
             if os.path.exists(full_path):
-                data.append({
-                    "name": folder,
-                    "path": folder,
-                    "type": "dir"
-                })
+                data.append({"name": folder, "path": folder, "type": "dir"})
         return jsonify(data)
     else:
-        # Sub-directory Level
         return jsonify(get_directory_contents(req_path))
 
 @app.route('/api/read', methods=['GET'])
 def read_file():
-    """Reads a file and checks if it is locked"""
     rel_path = request.args.get('path')
     full_path = os.path.join(ROOT_DIR, rel_path)
-    
     if not os.path.exists(full_path):
         return jsonify({"error": "File not found"}), 404
-
     try:
-        # Check write permission
         is_locked = not os.access(full_path, os.W_OK)
         with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
@@ -114,22 +90,46 @@ def run_test():
     data = request.json
     target_file = os.path.join(ROOT_DIR, data['target'])
     script_path = os.path.join(ROOT_DIR, 'src', 'main.py')
+    test_id = data.get('testId') # Frontend provides ID to allow stopping
     
     cmd = [sys.executable, script_path, target_file]
     
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        output = result.stdout + "\n" + result.stderr
+        # Use Popen to allow tracking
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if test_id:
+            active_tests[test_id] = proc
+            
+        stdout, stderr = proc.communicate()
+        
+        if test_id and test_id in active_tests:
+            del active_tests[test_id]
+
+        output = stdout + "\n" + stderr
         return jsonify({"output": output})
     except Exception as e:
         return jsonify({"output": f"Error running test: {str(e)}"})
+
+@app.route('/api/stop-test', methods=['POST'])
+def stop_test():
+    data = request.json
+    test_id = data.get('testId')
+    
+    if test_id in active_tests:
+        proc = active_tests[test_id]
+        try:
+            proc.kill() # Force kill
+            del active_tests[test_id]
+            return jsonify({"status": "stopped", "output": "\n[Process stopped by user]\n"})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    return jsonify({"error": "No active test found"}), 404
 
 @app.route('/api/open-external', methods=['POST'])
 def open_external():
     data = request.json
     rel_path = data['path']
     full_path = os.path.join(ROOT_DIR, rel_path)
-    
     try:
         if os.name == 'nt':
             os.startfile(full_path)
@@ -142,5 +142,5 @@ def open_external():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    print(f"Server running in {ROOT_DIR}")
-    app.run(port=5000, debug=True)
+    print(f"FlowSim Manager running in {ROOT_DIR}")
+    app.run(port=5000, debug=True, threaded=True)
