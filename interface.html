@@ -263,8 +263,9 @@
             },
 
             parseContent(text) {
-                // Updated regex to include forward slash / in the path capture group
-                return text.replace(/(=\s*)(Calibration[\\\/][\w\.\-\\\/]+)/g, (match, prefix, path) => {
+                // FIX: Regex now captures until a space or newline ([^\s\r\n]+).
+                // This ensures the entire path is grabbed, regardless of underscores, dots, or depth.
+                return text.replace(/(=\s*)(Calibration[\\\/][^\s\r\n]+)/g, (match, prefix, path) => {
                     // Escape backslashes for JS string literal
                     const safePath = path.replace(/\\/g, '\\\\');
                     return `${prefix}<span class="config-link" onclick="app.openExternal('${safePath}')">${path}</span>`;
