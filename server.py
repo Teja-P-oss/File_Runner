@@ -7,37 +7,68 @@ from flask_cors import CORS
 
 # Configuration
 app = Flask(__name__)
-CORS(app)  # Allow the HTML file to talk to this script
+CORS(app)
 ROOT_DIR = os.getcwd()
 
-def get_file_tree(start_path):
-    """Recursively builds a JSON tree of the directory"""
-    tree = {}
+# Allowed root directories
+ALLOWED_ROOTS = ['Tests', 'Calibration', 'src']
+
+def get_directory_contents(rel_path):
+    """
+    Optimization: Non-recursive. 
+    Returns list of items in a specific directory only.
+    """
+    abs_path = os.path.join(ROOT_DIR, rel_path)
+    
+    # Security check: ensure we don't traverse up out of root
+    if not os.path.commonpath([ROOT_DIR, abs_path]) == ROOT_DIR:
+        return []
+
+    if not os.path.exists(abs_path):
+        return []
+
+    items = []
     try:
-        # specific sorting: folders first, then files
-        items = os.listdir(start_path)
-        items.sort(key=lambda x: (not os.path.isdir(os.path.join(start_path, x)), x.lower()))
+        # Get entries
+        entries = os.scandir(abs_path)
         
-        for item in items:
-            path = os.path.join(start_path, item)
-            if os.path.isdir(path):
-                tree[item] = get_file_tree(path)
-            else:
-                # Mark as file
-                tree[item] = "__FILE__" 
+        # Sort: Directories first, then files, case-insensitive
+        sorted_entries = sorted(entries, key=lambda e: (not e.is_dir(), e.name.lower()))
+        
+        for entry in sorted_entries:
+            items.append({
+                "name": entry.name,
+                "path": os.path.join(rel_path, entry.name).replace("\\", "/"), # Normalize for web
+                "type": "dir" if entry.is_dir() else "file"
+            })
     except PermissionError:
         pass
-    return tree
+        
+    return items
 
 @app.route('/api/files', methods=['GET'])
 def list_files():
-    """Returns the structure of Tests, Calibration, and src"""
-    data = {}
-    for folder in ['Tests', 'Calibration', 'src']:
-        path = os.path.join(ROOT_DIR, folder)
-        if os.path.exists(path):
-            data[folder] = get_file_tree(path)
-    return jsonify(data)
+    """
+    Optimization: Returns contents of a specific path.
+    If no path is provided, returns the hardcoded root folders.
+    """
+    req_path = request.args.get('path', '')
+    
+    if not req_path:
+        # Root Level: Only return specific allowed folders
+        data = []
+        for folder in ALLOWED_ROOTS:
+            full_path = os.path.join(ROOT_DIR, folder)
+            if os.path.exists(full_path):
+                data.append({
+                    "name": folder,
+                    "path": folder,
+                    "type": "dir"
+                })
+        return jsonify(data)
+    else:
+        # Sub-directory Level
+        return jsonify(get_directory_contents(req_path))
 
 @app.route('/api/read', methods=['GET'])
 def read_file():
@@ -49,6 +80,7 @@ def read_file():
         return jsonify({"error": "File not found"}), 404
 
     try:
+        # Check write permission
         is_locked = not os.access(full_path, os.W_OK)
         with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
@@ -58,10 +90,8 @@ def read_file():
 
 @app.route('/api/save', methods=['POST'])
 def save_file():
-    """Saves content to file"""
     data = request.json
     full_path = os.path.join(ROOT_DIR, data['path'])
-    
     try:
         with open(full_path, 'w', encoding='utf-8') as f:
             f.write(data['content'])
@@ -71,7 +101,6 @@ def save_file():
 
 @app.route('/api/unlock', methods=['POST'])
 def unlock_file():
-    """Removes Read-Only attribute"""
     data = request.json
     full_path = os.path.join(ROOT_DIR, data['path'])
     try:
@@ -82,18 +111,13 @@ def unlock_file():
 
 @app.route('/api/run-test', methods=['POST'])
 def run_test():
-    """Runs python ../src/main.py <file>"""
     data = request.json
     target_file = os.path.join(ROOT_DIR, data['target'])
     script_path = os.path.join(ROOT_DIR, 'src', 'main.py')
     
-    # Command: python script.py target_file
-    # We use Popen to run it in a separate shell window if possible
     cmd = [sys.executable, script_path, target_file]
     
     try:
-        # Capture output or open new window depending on OS preferences
-        # Here we run it and capture output to show in the HTML terminal
         result = subprocess.run(cmd, capture_output=True, text=True)
         output = result.stdout + "\n" + result.stderr
         return jsonify({"output": output})
@@ -102,18 +126,16 @@ def run_test():
 
 @app.route('/api/open-external', methods=['POST'])
 def open_external():
-    """Opens a file with the default OS application"""
     data = request.json
-    # The path comes in as "Calibration/file.dat", we need full path
     rel_path = data['path']
     full_path = os.path.join(ROOT_DIR, rel_path)
     
     try:
-        if os.name == 'nt': # Windows
+        if os.name == 'nt':
             os.startfile(full_path)
-        elif sys.platform == 'darwin': # Mac
+        elif sys.platform == 'darwin':
             subprocess.call(('open', full_path))
-        else: # Linux
+        else:
             subprocess.call(('xdg-open', full_path))
         return jsonify({"status": "opened"})
     except Exception as e:
