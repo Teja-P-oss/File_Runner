@@ -153,6 +153,10 @@
                     const uniqueId = `node-${item.path.replace(/[^a-zA-Z0-9]/g, '-')}-${index}`; 
                     const padding = (depth * 12) + 12;
                     const itemDiv = document.createElement('div');
+                    
+                    // Check if file is an .ini file
+                    const isIni = item.name.toLowerCase().endsWith('.ini');
+
                     if (item.type === 'dir') {
                         itemDiv.innerHTML = `
                             <div>
@@ -171,7 +175,7 @@
                                     <span class="truncate">${item.name}</span>
                                 </div>
                                 <div class="hidden group-hover:flex gap-1">
-                                    <button onclick="app.runTest('${item.path}', event)" title="Run Test" class="bg-green-700 hover:bg-green-600 text-white px-1.5 rounded text-[10px]"><i class="fa-solid fa-play"></i></button>
+                                    ${isIni ? `<button onclick="app.runTest('${item.path}', event)" title="Run Test" class="bg-green-700 hover:bg-green-600 text-white px-1.5 rounded text-[10px]"><i class="fa-solid fa-play"></i></button>` : ''}
                                     <button onclick="app.copyPath('${item.path}', event)" title="Copy Path" class="bg-gray-600 hover:bg-gray-500 text-white px-1.5 rounded text-[10px]"><i class="fa-solid fa-copy"></i></button>
                                 </div>
                             </div>`;
