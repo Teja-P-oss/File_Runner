@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Manager Interface</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* Dark Mode Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1e1e1e; }
+        ::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+
+        /* Editor Syntax Highlighting */
+        .config-link {
+            color: #4ec9b0;
+            text-decoration: underline;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .config-link:hover { color: #9cdcfe; }
+        
+        .editor-line { counter-increment: line; }
+        .editor-line::before {
+            content: counter(line);
+            display: inline-block;
+            width: 2rem;
+            margin-right: 1rem;
+            text-align: right;
+            color: #6b7280;
+            font-size: 0.75rem;
+            user-select: none;
+        }
+
+        /* Animation for terminal cursor */
+        @keyframes blink { 50% { opacity: 0; } }
+        .cursor-blink { animation: blink 1s step-end infinite; }
+    </style>
+</head>
+<body class="bg-[#1e1e1e] text-gray-300 h-screen flex flex-col font-sans overflow-hidden">
+
+    <!-- Top Bar -->
+    <header class="bg-[#252526] border-b border-[#3e3e42] h-10 flex items-center justify-between px-4 shrink-0 select-none">
+        <div class="flex items-center gap-2 text-sm font-semibold text-gray-200">
+            <i class="fa-solid fa-flask text-purple-500"></i>
+            <span>Test Manager</span>
+        </div>
+        <div class="text-xs flex items-center gap-2">
+            <span id="connection-status" class="flex items-center gap-1 text-green-500">
+                <div class="w-2 h-2 rounded-full bg-current"></div>
+                System Ready
+            </span>
+        </div>
+    </header>
+
+    <div class="flex-1 flex overflow-hidden">
+        <!-- Left Panel: File Explorer -->
+        <aside class="w-72 bg-[#252526] border-r border-[#3e3e42] flex flex-col shrink-0">
+            <div class="px-4 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-[#3e3e42]">
+                Project Explorer
+            </div>
+            <div id="file-tree" class="flex-1 overflow-y-auto py-2">
+                <!-- Tree injected by JS -->
+            </div>
+        </aside>
+
+        <!-- Right Panel: Editor & Terminal -->
+        <main class="flex-1 flex flex-col min-w-0 bg-[#1e1e1e]">
+            
+            <!-- Editor Toolbar -->
+            <div id="editor-toolbar" class="h-10 bg-[#2d2d2d] border-b border-[#3e3e42] flex items-center justify-between px-4 hidden">
+                <div class="flex items-center gap-2 text-sm">
+                    <i class="fa-regular fa-file-lines text-blue-400"></i>
+                    <span id="file-name-display" class="font-medium text-gray-200">No File Selected</span>
+                    <span id="read-only-badge" class="ml-2 px-1.5 py-0.5 text-[10px] border border-red-500 text-red-400 rounded hidden">
+                        <i class="fa-solid fa-lock mr-1"></i>READ ONLY
+                    </span>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="UI.triggerSave()" id="btn-save" class="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded transition opacity-50 cursor-not-allowed" disabled>
+                        <i class="fa-solid fa-floppy-disk mr-1"></i> Save
+                    </button>
+                </div>
+            </div>
+
+            <!-- Editor Content -->
+            <div id="editor-area" class="flex-1 overflow-auto font-mono text-sm leading-6 outline-none p-0 relative hidden">
+                <div id="editor-content" class="p-4 min-h-full text-gray-300 whitespace-pre focus:outline-none" contenteditable="false" spellcheck="false"></div>
+            </div>
+
+            <!-- Empty State -->
+            <div id="empty-state" class="flex-1 flex flex-col items-center justify-center text-gray-600 select-none">
+                <i class="fa-brands fa-python text-6xl mb-4 opacity-20"></i>
+                <p class="text-sm">Select an .ini file from the Tests folder</p>
+            </div>
+
+            <!-- Integrated Terminal -->
+            <div class="h-48 bg-[#1e1e1e] border-t border-[#3e3e42] flex flex-col shrink-0">
+                <div class="flex justify-between items-center px-4 py-1 bg-[#252526] border-b border-[#3e3e42]">
+                    <span class="text-xs font-semibold text-gray-400 uppercase">Terminal Output</span>
+                    <button onclick="UI.clearTerminal()" class="text-gray-500 hover:text-gray-300 text-xs"><i class="fa-solid fa-trash"></i></button>
+                </div>
+                <div id="terminal" class="flex-1 overflow-y-auto p-2 font-mono text-xs text-gray-300 whitespace-pre-wrap">
+                    <div class="text-gray-500">Microsoft Windows [Version 10.0.19045.3693]</div>
+                    <div class="text-gray-500">(c) Microsoft Corporation. All rights reserved.</div>
+                    <br>
+                    <div id="terminal-lines"></div>
+                    <div class="flex text-gray-100"><span class="mr-2 text-green-500">➜</span><span class="cursor-blink">_</span></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Notifications -->
+    <div id="toast" class="fixed bottom-4 right-4 bg-[#252526] border-l-4 border-blue-500 text-white px-4 py-3 rounded shadow-xl transform translate-y-full transition-transform duration-300 flex items-center gap-3 z-50">
+        <i class="fa-solid fa-info-circle"></i>
+        <span id="toast-msg" class="text-sm">Notification</span>
+    </div>
+
+    <script>
+        /**
+         * ------------------------------------------------------------------
+         * DATA LAYER (MOCK BACKEND)
+         * INTEGRATION NOTE: 
+         * Replace the methods in 'TestManagerAPI' with real fetch() calls 
+         * to your backend server to integrate with your system.
+         * ------------------------------------------------------------------
+         */
+        class TestManagerAPI {
+            constructor() {
+                // SIMULATED DATABASE (Assuming you have these folders)
+                this.mockFileSystem = {
+                    "Tests": {
+                        "Device_A": {
+                            "config_101.ini": { content: "[System]\nID=101\n[Calibration]\nTFEconfig = Calibration/sensor_map_a.dat", locked: true },
+                            "config_102.ini": { content: "[System]\nID=102\n[Calibration]\nTFEconfig = Calibration/sensor_map_b.dat", locked: true }
+                        },
+                        "Device_B": {
+                            "run_profile.ini": { content: "[Optics]\nMode=Fast\nOFEconfig = Calibration/optics_v2.dat", locked: true }
+                        }
+                    },
+                    "Calibration": {
+                        "sensor_map_a.dat": { content: "BINARY...", locked: false },
+                        "sensor_map_b.dat": { content: "BINARY...", locked: false },
+                        "optics_v2.dat": { content: "BINARY...", locked: false }
+                    },
+                    "src": {
+                        "main.py": { content: "import sys...", locked: false }
+                    }
+                };
+            }
+
+            async getFileTree() {
+                // INTEGRATION: return fetch('/api/files').then(r => r.json());
+                return new Promise(resolve => setTimeout(() => resolve(this.mockFileSystem), 100));
+            }
+
+            async readFile(path) {
+                // INTEGRATION: return fetch(`/api/read?path=${path}`).then(r => r.json());
+                const parts = path.split('/');
+                let current = this.mockFileSystem;
+                for (const part of parts) current = current ? current[part] : undefined;
+                
+                if (current && current.content !== undefined) {
+                    return { content: current.content, locked: current.locked };
+                }
+                throw new Error("File not found");
+            }
+
+            async saveFile(path, content) {
+                // INTEGRATION: return fetch('/api/save', { method: 'POST', body: JSON.stringify({path, content}) });
+                const parts = path.split('/');
+                let current = this.mockFileSystem;
+                for (const part of parts) current = current ? current[part] : undefined;
+                if (current) current.content = content;
+                return { success: true };
+            }
+
+            async unlockFile(path) {
+                // INTEGRATION: return fetch('/api/unlock', { method: 'POST', body: JSON.stringify({path}) });
+                const parts = path.split('/');
+                let current = this.mockFileSystem;
+                for (const part of parts) current = current ? current[part] : undefined;
+                if (current) current.locked = false;
+                return { success: true, locked: false };
+            }
+
+            async runTestCommand(filePath) {
+                // INTEGRATION: return fetch('/api/run-test', { method: 'POST', body: JSON.stringify({target: filePath}) });
+                return new Promise(resolve => setTimeout(() => resolve({ 
+                    output: `> python ../src/main.py ${filePath}\n[INFO] Starting Test Suite...\n[INFO] Loading Config...\n[SUCCESS] All Tests Passed.` 
+                }), 1500));
+            }
+        }
+
+        const api = new TestManagerAPI();
+
+        /**
+         * ------------------------------------------------------------------
+         * UI LAYER (VIEW LOGIC)
+         * ------------------------------------------------------------------
+         */
+        const UI = {
+            currentFile: null,
+            expandedFolders: new Set(['Tests']), // Default expand "Tests"
+
+            init() {
+                this.renderTree();
+            },
+
+            // --- File Tree Rendering ---
+            async renderTree() {
+                const data = await api.getFileTree();
+                const treeEl = document.getElementById('file-tree');
+                treeEl.innerHTML = this.buildTreeHtml(data, '');
+            },
+
+            buildTreeHtml(node, path) {
+                let html = '';
+                // Sort: Folders first
+                const entries = Object.entries(node).sort((a, b) => {
+                    const aIsFile = a[1].content !== undefined;
+                    const bIsFile = b[1].content !== undefined;
+                    if (aIsFile === bIsFile) return a[0].localeCompare(b[0]);
+                    return aIsFile ? 1 : -1;
+                });
+
+                for (const [name, item] of entries) {
+                    const fullPath = path ? `${path}/${name}` : name;
+                    const isFile = item.content !== undefined;
+                    const padding = (fullPath.split('/').length * 12) + 12; // Indentation
+
+                    if (isFile) {
+                        // FILE NODE
+                        html += `
+                            <div class="group flex items-center justify-between py-1 pr-2 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors"
+                                 style="padding-left: ${padding}px"
+                                 onclick="UI.openFile('${fullPath}')">
+                                <div class="flex items-center gap-2 truncate flex-1">
+                                    <i class="fa-regular fa-file-lines text-blue-400 text-xs"></i>
+                                    <span class="text-sm truncate">${name}</span>
+                                </div>
+                                <div class="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
+                                    <button onclick="UI.runTest('${fullPath}', event)" title="Run Test" class="bg-green-700 hover:bg-green-600 text-white px-1.5 rounded text-[10px] h-5 flex items-center">
+                                        <i class="fa-solid fa-play"></i>
+                                    </button>
+                                    <button onclick="UI.copyPath('${fullPath}', event)" title="Copy Path" class="bg-gray-600 hover:bg-gray-500 text-white px-1.5 rounded text-[10px] h-5 flex items-center">
+                                        <i class="fa-solid fa-copy"></i>
+                                    </button>
+                                </div>
+                            </div>`;
+                    } else {
+                        // FOLDER NODE
+                        const isExpanded = this.expandedFolders.has(fullPath);
+                        const icon = isExpanded ? 'fa-folder-open' : 'fa-folder';
+                        const rotate = isExpanded ? 'transform rotate-90' : '';
+                        
+                        html += `
+                            <div>
+                                <div class="flex items-center py-1 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors"
+                                     style="padding-left: ${padding - 14}px"
+                                     onclick="UI.toggleFolder('${fullPath}')">
+                                    <i class="fa-solid fa-chevron-right text-[10px] w-4 text-center transition-transform duration-200 ${rotate} mr-1"></i>
+                                    <i class="fa-solid ${icon} text-yellow-600 text-xs mr-2"></i>
+                                    <span class="text-sm font-medium select-none">${name}</span>
+                                </div>
+                                <div class="${isExpanded ? 'block' : 'hidden'}">
+                                    ${this.buildTreeHtml(item, fullPath)}
+                                </div>
+                            </div>`;
+                    }
+                }
+                return html;
+            },
+
+            toggleFolder(path) {
+                if (this.expandedFolders.has(path)) this.expandedFolders.delete(path);
+                else this.expandedFolders.add(path);
+                this.renderTree(); // Re-render to show/hide children
+            },
+
+            // --- File Operations ---
+            async openFile(path) {
+                try {
+                    const data = await api.readFile(path);
+                    this.currentFile = { path, ...data };
+                    
+                    // Update UI
+                    document.getElementById('empty-state').classList.add('hidden');
+                    document.getElementById('editor-area').classList.remove('hidden');
+                    document.getElementById('editor-toolbar').classList.remove('hidden');
+                    document.getElementById('editor-toolbar').classList.add('flex');
+                    
+                    document.getElementById('file-name-display').innerText = path.split('/').pop();
+                    
+                    const lockBadge = document.getElementById('read-only-badge');
+                    const saveBtn = document.getElementById('btn-save');
+                    const editor = document.getElementById('editor-content');
+
+                    if (data.locked) {
+                        lockBadge.classList.remove('hidden');
+                        lockBadge.onclick = () => UI.unlockFile();
+                        lockBadge.classList.add('cursor-pointer', 'hover:bg-red-900');
+                        lockBadge.title = "Click to Unlock";
+                        editor.setAttribute('contenteditable', 'false');
+                        saveBtn.disabled = true;
+                        saveBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    } else {
+                        lockBadge.classList.add('hidden');
+                        editor.setAttribute('contenteditable', 'true');
+                        saveBtn.disabled = false;
+                        saveBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    }
+
+                    // Render Content with Parsing
+                    this.renderEditorContent(data.content);
+
+                } catch (e) {
+                    this.showToast(e.message, 'red');
+                }
+            },
+
+            renderEditorContent(content) {
+                const editor = document.getElementById('editor-content');
+                // Regex to hyperlink "Calibration/..." paths
+                const linked = content.replace(
+                    /((?:TFE|OFE)config\s*=\s*)(Calibration\/[\w\.\-_]+)/g, 
+                    '$1<span class="config-link" onclick="UI.openExternalLink(\'$2\')">$2</span>'
+                );
+                editor.innerHTML = linked;
+            },
+
+            async unlockFile() {
+                if (!this.currentFile) return;
+                this.showToast('Unlocking file...', 'blue');
+                await api.unlockFile(this.currentFile.path);
+                this.openFile(this.currentFile.path); // Reload
+                this.showToast('File Unlocked', 'green');
+            },
+
+            async triggerSave() {
+                if (!this.currentFile) return;
+                const content = document.getElementById('editor-content').innerText;
+                await api.saveFile(this.currentFile.path, content);
+                this.showToast('File Saved Successfully', 'green');
+            },
+
+            openExternalLink(path) {
+                const editor = document.getElementById('editor-content');
+                if (editor.getAttribute('contenteditable') === 'true') return; // Don't click links while editing
+                
+                // Simulate opening external app
+                this.logTerminal(`> Opening associated application for "${path}"...`);
+                this.showToast(`Opened ${path}`, 'purple');
+            },
+
+            // --- Actions ---
+            async runTest(path, e) {
+                if (e) e.stopPropagation();
+                this.logTerminal(`> Executing Test Suite: ${path}`);
+                this.logTerminal(`> python ../src/main.py ${path} [Running...]`);
+                
+                const result = await api.runTestCommand(path);
+                this.logTerminal(result.output);
+                this.showToast('Test Execution Complete', 'green');
+            },
+
+            copyPath(path, e) {
+                if (e) e.stopPropagation();
+                navigator.clipboard.writeText(path);
+                this.showToast('Path copied to clipboard', 'blue');
+            },
+
+            // --- Utilities ---
+            logTerminal(text) {
+                const term = document.getElementById('terminal-lines');
+                const div = document.createElement('div');
+                div.innerText = text;
+                div.className = "mb-1 text-gray-300";
+                term.appendChild(div);
+                document.getElementById('terminal').scrollTop = document.getElementById('terminal').scrollHeight;
+            },
+
+            clearTerminal() {
+                document.getElementById('terminal-lines').innerHTML = '';
+            },
+
+            showToast(msg, color = 'green') {
+                const toast = document.getElementById('toast');
+                const msgEl = document.getElementById('toast-msg');
+                msgEl.innerText = msg;
+                
+                const colors = {
+                    green: 'border-green-500',
+                    red: 'border-red-500',
+                    blue: 'border-blue-500',
+                    purple: 'border-purple-500'
+                };
+                
+                toast.className = `fixed bottom-4 right-4 bg-[#252526] border-l-4 ${colors[color]} text-white px-4 py-3 rounded shadow-xl transform transition-transform duration-300 flex items-center gap-3 z-50`;
+                toast.classList.remove('translate-y-full');
+                setTimeout(() => toast.classList.add('translate-y-full'), 3000);
+            }
+        };
+
+        // Start App
+        UI.init();
+    </script>
+</body>
+</html>
