@@ -49,8 +49,7 @@
 
         <main class="flex-1 flex flex-col min-w-0 bg-[#1e1e1e]">
             
-            <div id="tabs-container" class="h-9 bg-[#252526] flex overflow-x-auto overflow-y-hidden select-none scrollbar-hide">
-                </div>
+            <div id="tabs-container" class="h-9 bg-[#252526] flex overflow-x-auto overflow-y-hidden select-none scrollbar-hide"></div>
 
             <div id="toolbar" class="h-10 bg-[#2d2d2d] border-b border-[#3e3e42] flex items-center justify-between px-4 hidden">
                 <div class="flex items-center gap-2 text-sm">
@@ -96,7 +95,7 @@
         const API_URL = 'http://localhost:5000/api';
         
         const app = {
-            tabs: [], // Array of { path, content, locked, name }
+            tabs: [], 
             activeTab: null,
             currentTestId: null,
 
@@ -107,7 +106,6 @@
                     const res = await fetch(`${API_URL}/files`);
                     if(!res.ok) throw new Error();
                     const rootItems = await res.json();
-                    
                     this.updateStatus(true);
                     document.getElementById('empty-state').innerHTML = '<p>Select a file from the explorer.</p>';
                     this.renderChildren(rootItems, rootEl, 0);
@@ -123,7 +121,6 @@
                 el.innerHTML = `<i class="fa-solid fa-circle text-[8px]"></i> ${online ? 'Connected' : 'Disconnected'}`;
             },
 
-            // --- Tree Logic ---
             async toggleFolder(path, elementId) {
                 const container = document.getElementById(elementId);
                 const icon = document.getElementById(`icon-${elementId}`);
@@ -183,24 +180,15 @@
                 });
             },
 
-            // --- Tab & File Logic ---
             async loadFile(path) {
-                // Check if already open
                 const existingTab = this.tabs.find(t => t.path === path);
                 if (existingTab) {
                     this.activateTab(path);
                     return;
                 }
-
                 const res = await fetch(`${API_URL}/read?path=${encodeURIComponent(path)}`);
                 const data = await res.json();
-
-                const newTab = {
-                    path: path,
-                    name: path.split('/').pop(),
-                    content: data.content,
-                    locked: data.locked
-                };
+                const newTab = { path: path, name: path.split('/').pop(), content: data.content, locked: data.locked };
                 this.tabs.push(newTab);
                 this.activateTab(path);
             },
@@ -217,22 +205,15 @@
                 if(e) e.stopPropagation();
                 const idx = this.tabs.findIndex(t => t.path === path);
                 if(idx === -1) return;
-                
-                // Determine new active tab
                 let newActive = null;
                 if (this.activeTab && this.activeTab.path === path) {
-                    if (this.tabs.length > 1) {
-                        newActive = this.tabs[idx === 0 ? 1 : idx - 1];
-                    }
+                    if (this.tabs.length > 1) newActive = this.tabs[idx === 0 ? 1 : idx - 1];
                 } else {
                     newActive = this.activeTab;
                 }
-
                 this.tabs.splice(idx, 1);
-                
-                if(newActive) {
-                    this.activateTab(newActive.path);
-                } else {
+                if(newActive) this.activateTab(newActive.path);
+                else {
                     this.activeTab = null;
                     this.renderTabs();
                     this.renderEditor();
@@ -260,15 +241,12 @@
                     toolbar.classList.add('hidden');
                     return;
                 }
-
                 emptyState.classList.add('hidden');
                 editorCont.classList.remove('hidden');
                 toolbar.classList.remove('hidden');
                 toolbar.classList.add('flex');
-
                 document.getElementById('filename').innerText = this.activeTab.name;
 
-                // Locking
                 const badge = document.getElementById('lock-badge');
                 const saveBtn = document.getElementById('btn-save');
                 
@@ -281,19 +259,16 @@
                     saveBtn.disabled = false;
                     editorCont.setAttribute('contenteditable', 'true');
                 }
-
-                // If content changed in UI, preserve it? For minimal code, we just re-render stored content
-                // Note: In a real app, we should save state on tab switch. 
-                // Here we re-render from memory.
                 editorCont.innerHTML = this.parseContent(this.activeTab.content);
             },
 
             parseContent(text) {
-                // Updated Regex for Calibration paths (supports \ and /)
-                // Group 1: Key + = + whitespace
-                // Group 2: Value starting with Calibration
-                return text.replace(/(=\s*)(Calibration[\\\/][\w\.\-\\]+)/g, 
-                    '$1<span class="config-link" onclick="app.openExternal(\'$2\')">$2</span>');
+                // Updated regex to include forward slash / in the path capture group
+                return text.replace(/(=\s*)(Calibration[\\\/][\w\.\-\\\/]+)/g, (match, prefix, path) => {
+                    // Escape backslashes for JS string literal
+                    const safePath = path.replace(/\\/g, '\\\\');
+                    return `${prefix}<span class="config-link" onclick="app.openExternal('${safePath}')">${path}</span>`;
+                });
             },
 
             async unlockCurrent() {
@@ -302,7 +277,6 @@
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ path: this.activeTab.path })
                 });
-                // Reload content
                 const res = await fetch(`${API_URL}/read?path=${encodeURIComponent(this.activeTab.path)}`);
                 const data = await res.json();
                 this.activeTab.content = data.content;
@@ -313,7 +287,7 @@
             async saveCurrent() {
                 if(!this.activeTab) return;
                 const content = document.getElementById('editor-container').innerText;
-                this.activeTab.content = content; // Update local state
+                this.activeTab.content = content;
                 await fetch(`${API_URL}/save`, {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ path: this.activeTab.path, content })
@@ -332,11 +306,8 @@
                 if(e) e.stopPropagation();
                 const term = document.getElementById('terminal-out');
                 const stopBtn = document.getElementById('btn-stop');
-                
                 term.innerText += `\n> Running test for ${path}...\n`;
                 stopBtn.classList.remove('hidden');
-                
-                // Generate a generic Test ID to allow stopping
                 this.currentTestId = Date.now().toString();
 
                 try {
@@ -370,16 +341,13 @@
             }
         };
 
-        // --- Resizing Logic ---
         const setupResizer = (resizerId, elementId, isRow) => {
             const resizer = document.getElementById(resizerId);
             const element = document.getElementById(elementId);
-            
             resizer.addEventListener('mousedown', (e) => {
                 e.preventDefault();
                 resizer.classList.add('resizing');
                 document.body.style.cursor = isRow ? 'row-resize' : 'col-resize';
-                
                 const onMouseMove = (e) => {
                     if (isRow) {
                         const newHeight = window.innerHeight - e.clientY;
@@ -391,22 +359,18 @@
                             element.style.width = newWidth + 'px';
                     }
                 };
-                
                 const onMouseUp = () => {
                     document.removeEventListener('mousemove', onMouseMove);
                     document.removeEventListener('mouseup', onMouseUp);
                     resizer.classList.remove('resizing');
                     document.body.style.cursor = '';
                 };
-                
                 document.addEventListener('mousemove', onMouseMove);
                 document.addEventListener('mouseup', onMouseUp);
             });
         };
-
         setupResizer('resizer-side', 'sidebar', false);
         setupResizer('resizer-term', 'terminal-panel', true);
-
         app.init();
     </script>
 </body>
