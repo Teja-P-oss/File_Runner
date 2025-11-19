@@ -49,8 +49,7 @@
 
         <main class="flex-1 flex flex-col min-w-0 bg-[#1e1e1e]">
             
-            <div id="tabs-container" class="h-9 bg-[#252526] flex overflow-x-auto overflow-y-hidden select-none scrollbar-hide">
-                </div>
+            <div id="tabs-container" class="h-9 bg-[#252526] flex overflow-x-auto overflow-y-hidden select-none scrollbar-hide"></div>
 
             <div id="toolbar" class="h-10 bg-[#2d2d2d] border-b border-[#3e3e42] flex items-center justify-between px-4 hidden">
                 <div class="flex items-center gap-2 text-sm">
@@ -81,6 +80,9 @@
                 <div class="flex justify-between items-center px-4 py-1 bg-[#252526] border-b border-[#3e3e42]">
                     <span class="text-gray-400 uppercase">Output</span>
                     <div class="flex gap-2">
+                        <button id="btn-stop" onclick="app.stopTest()" class="hidden text-red-400 hover:text-red-300 mr-2">
+                            <i class="fa-solid fa-stop"></i> STOP
+                        </button>
                         <button onclick="document.getElementById('terminal-out').innerText=''" class="hover:text-white"><i class="fa-solid fa-trash"></i></button>
                     </div>
                 </div>
@@ -96,8 +98,6 @@
             tabs: [], 
             activeTab: null,
             currentTestId: null,
-            activeTestBtn: null,
-            activeTestPath: null,
 
             async init() {
                 const rootEl = document.getElementById('file-tree-root');
@@ -106,7 +106,6 @@
                     const res = await fetch(`${API_URL}/files`);
                     if(!res.ok) throw new Error();
                     const rootItems = await res.json();
-                    
                     this.updateStatus(true);
                     document.getElementById('empty-state').innerHTML = '<p>Select a file from the explorer.</p>';
                     this.renderChildren(rootItems, rootEl, 0);
@@ -183,10 +182,14 @@
 
             async loadFile(path) {
                 const existingTab = this.tabs.find(t => t.path === path);
-                if (existingTab) { this.activateTab(path); return; }
+                if (existingTab) {
+                    this.activateTab(path);
+                    return;
+                }
                 const res = await fetch(`${API_URL}/read?path=${encodeURIComponent(path)}`);
                 const data = await res.json();
-                this.tabs.push({ path, name: path.split('/').pop(), content: data.content, locked: data.locked });
+                const newTab = { path: path, name: path.split('/').pop(), content: data.content, locked: data.locked };
+                this.tabs.push(newTab);
                 this.activateTab(path);
             },
 
@@ -202,11 +205,19 @@
                 if(e) e.stopPropagation();
                 const idx = this.tabs.findIndex(t => t.path === path);
                 if(idx === -1) return;
-                let newActive = (this.activeTab && this.activeTab.path === path && this.tabs.length > 1) 
-                    ? this.tabs[idx === 0 ? 1 : idx - 1] : this.activeTab;
+                let newActive = null;
+                if (this.activeTab && this.activeTab.path === path) {
+                    if (this.tabs.length > 1) newActive = this.tabs[idx === 0 ? 1 : idx - 1];
+                } else {
+                    newActive = this.activeTab;
+                }
                 this.tabs.splice(idx, 1);
-                if(newActive && newActive.path !== path) this.activateTab(newActive.path);
-                else { this.activeTab = null; this.renderTabs(); this.renderEditor(); }
+                if(newActive) this.activateTab(newActive.path);
+                else {
+                    this.activeTab = null;
+                    this.renderTabs();
+                    this.renderEditor();
+                }
             },
 
             renderTabs() {
@@ -215,32 +226,62 @@
                     <div class="tab flex items-center justify-between px-3 text-xs cursor-pointer shrink-0 ${this.activeTab && this.activeTab.path === t.path ? 'active' : ''}" onclick="app.activateTab('${t.path}')">
                         <span class="truncate mr-2">${t.name}</span>
                         <i class="fa-solid fa-xmark hover:text-white rounded p-0.5" onclick="app.closeTab('${t.path}', event)"></i>
-                    </div>`).join('');
+                    </div>
+                `).join('');
             },
 
             renderEditor() {
-                const empty = document.getElementById('empty-state'), editor = document.getElementById('editor-container'), toolbar = document.getElementById('toolbar');
-                if (!this.activeTab) { empty.classList.remove('hidden'); editor.classList.add('hidden'); toolbar.classList.add('hidden'); return; }
-                
-                empty.classList.add('hidden'); editor.classList.remove('hidden'); toolbar.classList.remove('hidden'); toolbar.classList.add('flex');
+                const emptyState = document.getElementById('empty-state');
+                const editorCont = document.getElementById('editor-container');
+                const toolbar = document.getElementById('toolbar');
+
+                if (!this.activeTab) {
+                    emptyState.classList.remove('hidden');
+                    editorCont.classList.add('hidden');
+                    toolbar.classList.add('hidden');
+                    return;
+                }
+                emptyState.classList.add('hidden');
+                editorCont.classList.remove('hidden');
+                toolbar.classList.remove('hidden');
+                toolbar.classList.add('flex');
                 document.getElementById('filename').innerText = this.activeTab.name;
+
+                const badge = document.getElementById('lock-badge');
+                const saveBtn = document.getElementById('btn-save');
                 
-                const badge = document.getElementById('lock-badge'), saveBtn = document.getElementById('btn-save');
-                if(this.activeTab.locked) { badge.classList.remove('hidden'); saveBtn.disabled = true; editor.setAttribute('contenteditable', 'false'); }
-                else { badge.classList.add('hidden'); saveBtn.disabled = false; editor.setAttribute('contenteditable', 'true'); }
-                editor.innerHTML = this.parseContent(this.activeTab.content);
+                if(this.activeTab.locked) {
+                    badge.classList.remove('hidden');
+                    saveBtn.disabled = true;
+                    editorCont.setAttribute('contenteditable', 'false');
+                } else {
+                    badge.classList.add('hidden');
+                    saveBtn.disabled = false;
+                    editorCont.setAttribute('contenteditable', 'true');
+                }
+                editorCont.innerHTML = this.parseContent(this.activeTab.content);
             },
 
             parseContent(text) {
-                return text.replace(/(=\s*)(Calibration[\\\/][\w\.\-\\]+)/g, '$1<span class="config-link" onclick="app.openExternal(\'$2\')">$2</span>');
+                // FIX: Regex now captures until a space or newline ([^\s\r\n]+).
+                // This ensures the entire path is grabbed, regardless of underscores, dots, or depth.
+                return text.replace(/(=\s*)(Calibration[\\\/][^\s\r\n]+)/g, (match, prefix, path) => {
+                    // Escape backslashes for JS string literal
+                    const safePath = path.replace(/\\/g, '\\\\');
+                    return `${prefix}<span class="config-link" onclick="app.openExternal('${safePath}')">${path}</span>`;
+                });
             },
 
             async unlockCurrent() {
                 if(!this.activeTab) return;
-                await fetch(`${API_URL}/unlock`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ path: this.activeTab.path }) });
+                await fetch(`${API_URL}/unlock`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ path: this.activeTab.path })
+                });
                 const res = await fetch(`${API_URL}/read?path=${encodeURIComponent(this.activeTab.path)}`);
                 const data = await res.json();
-                this.activeTab.content = data.content; this.activeTab.locked = data.locked;
+                this.activeTab.content = data.content;
+                this.activeTab.locked = data.locked;
                 this.renderEditor();
             },
 
@@ -248,31 +289,28 @@
                 if(!this.activeTab) return;
                 const content = document.getElementById('editor-container').innerText;
                 this.activeTab.content = content;
-                await fetch(`${API_URL}/save`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ path: this.activeTab.path, content }) });
+                await fetch(`${API_URL}/save`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ path: this.activeTab.path, content })
+                });
+                alert("Saved!");
             },
 
             async openExternal(path) {
-                await fetch(`${API_URL}/open-external`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ path }) });
+                await fetch(`${API_URL}/open-external`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ path })
+                });
             },
 
             async runTest(path, e) {
                 if(e) e.stopPropagation();
-                if(this.currentTestId) {
-                    if(this.activeTestPath === path) await this.stopTest();
-                    return;
-                }
-
                 const term = document.getElementById('terminal-out');
-                this.activeTestBtn = e.currentTarget;
-                this.activeTestPath = path;
+                const stopBtn = document.getElementById('btn-stop');
+                term.innerText += `\n> Running test for ${path}...\n`;
+                stopBtn.classList.remove('hidden');
                 this.currentTestId = Date.now().toString();
 
-                // UI Toggle -> Red Stop
-                this.activeTestBtn.innerHTML = '<i class="fa-solid fa-stop"></i>';
-                this.activeTestBtn.className = this.activeTestBtn.className.replace('bg-green-700 hover:bg-green-600', 'bg-red-600 hover:bg-red-500');
-                
-                term.innerText += `\n> Running ${path}...\n`;
-                
                 try {
                     const res = await fetch(`${API_URL}/run-test`, {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -283,45 +321,57 @@
                 } catch(err) {
                     term.innerText += "\nError communicating with server.\n";
                 } finally {
-                    // UI Revert -> Green Play
-                    if(this.activeTestBtn) {
-                        this.activeTestBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
-                        this.activeTestBtn.className = this.activeTestBtn.className.replace('bg-red-600 hover:bg-red-500', 'bg-green-700 hover:bg-green-600');
-                    }
+                    stopBtn.classList.add('hidden');
                     this.currentTestId = null;
-                    this.activeTestPath = null;
-                    this.activeTestBtn = null;
                     term.scrollTop = term.scrollHeight;
                 }
             },
 
             async stopTest() {
                 if(!this.currentTestId) return;
-                await fetch(`${API_URL}/stop-test`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ testId: this.currentTestId }) });
+                await fetch(`${API_URL}/stop-test`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ testId: this.currentTestId })
+                });
             },
 
             copyPath(path, e) {
                 if(e) e.stopPropagation();
                 navigator.clipboard.writeText(path);
+                alert("Path copied: " + path);
             }
         };
 
         const setupResizer = (resizerId, elementId, isRow) => {
-            const resizer = document.getElementById(resizerId), element = document.getElementById(elementId);
+            const resizer = document.getElementById(resizerId);
+            const element = document.getElementById(elementId);
             resizer.addEventListener('mousedown', (e) => {
-                e.preventDefault(); resizer.classList.add('resizing');
+                e.preventDefault();
+                resizer.classList.add('resizing');
                 document.body.style.cursor = isRow ? 'row-resize' : 'col-resize';
                 const onMouseMove = (e) => {
-                    if (isRow) { const h = window.innerHeight - e.clientY; if(h > 50 && h < window.innerHeight - 100) element.style.height = h + 'px'; }
-                    else { const w = e.clientX; if(w > 150 && w < 600) element.style.width = w + 'px'; }
+                    if (isRow) {
+                        const newHeight = window.innerHeight - e.clientY;
+                        if(newHeight > 50 && newHeight < window.innerHeight - 100)
+                            element.style.height = newHeight + 'px';
+                    } else {
+                        const newWidth = e.clientX;
+                        if(newWidth > 150 && newWidth < 600)
+                            element.style.width = newWidth + 'px';
+                    }
                 };
-                const onMouseUp = () => { document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); resizer.classList.remove('resizing'); document.body.style.cursor = ''; };
-                document.addEventListener('mousemove', onMouseMove); document.addEventListener('mouseup', onMouseUp);
+                const onMouseUp = () => {
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                    resizer.classList.remove('resizing');
+                    document.body.style.cursor = '';
+                };
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
             });
         };
         setupResizer('resizer-side', 'sidebar', false);
         setupResizer('resizer-term', 'terminal-panel', true);
-
         app.init();
     </script>
 </body>
