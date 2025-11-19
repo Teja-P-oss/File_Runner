@@ -12,11 +12,13 @@
         ::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 4px; }
         .config-link { color: #4ec9b0; text-decoration: underline; cursor: pointer; }
         .config-link:hover { color: #9cdcfe; }
+        /* Animation for loading spinner */
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="bg-[#1e1e1e] text-gray-300 h-screen flex flex-col font-sans overflow-hidden">
 
-    <!-- Header -->
     <header class="bg-[#252526] border-b border-[#3e3e42] h-10 flex items-center justify-between px-4 shrink-0 select-none">
         <div class="flex items-center gap-2 text-sm font-semibold text-gray-200">
             <i class="fa-solid fa-flask text-purple-500"></i> <span>Test Manager</span>
@@ -27,15 +29,12 @@
     </header>
 
     <div class="flex-1 flex overflow-hidden">
-        <!-- Left: Tree -->
         <aside class="w-80 bg-[#252526] border-r border-[#3e3e42] flex flex-col shrink-0">
             <div class="px-4 py-2 text-xs font-bold text-gray-500 uppercase border-b border-[#3e3e42]">Explorer</div>
-            <div id="file-tree" class="flex-1 overflow-y-auto py-2 text-sm"></div>
+            <div id="file-tree-root" class="flex-1 overflow-y-auto py-2 text-sm"></div>
         </aside>
 
-        <!-- Right: Editor & Terminal -->
         <main class="flex-1 flex flex-col min-w-0 bg-[#1e1e1e]">
-            <!-- Toolbar -->
             <div id="toolbar" class="h-10 bg-[#2d2d2d] border-b border-[#3e3e42] flex items-center justify-between px-4 hidden">
                 <div class="flex items-center gap-2 text-sm">
                     <i class="fa-regular fa-file-lines text-blue-400"></i>
@@ -47,17 +46,14 @@
                 <button onclick="app.saveCurrent()" id="btn-save" class="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded transition disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
             </div>
 
-            <!-- Editor -->
             <div id="editor-container" class="flex-1 overflow-auto font-mono text-sm leading-6 p-4 outline-none whitespace-pre hidden" contenteditable="false"></div>
 
-            <!-- Empty State -->
             <div id="empty-state" class="flex-1 flex flex-col items-center justify-center text-gray-600">
                 <i class="fa-solid fa-server text-4xl mb-4"></i>
                 <p>Waiting for server at localhost:5000...</p>
                 <button onclick="app.init()" class="mt-4 text-xs underline">Retry Connection</button>
             </div>
 
-            <!-- Terminal -->
             <div class="h-48 bg-[#1e1e1e] border-t border-[#3e3e42] flex flex-col shrink-0 font-mono text-xs">
                 <div class="flex justify-between items-center px-4 py-1 bg-[#252526] border-b border-[#3e3e42]">
                     <span class="text-gray-400 uppercase">Output</span>
@@ -73,18 +69,24 @@
         
         const app = {
             currentFile: null,
-            expanded: new Set(['Tests']),
+            loadedFolders: new Set(), // Keeps track of folders we've already fetched
 
             async init() {
+                const rootEl = document.getElementById('file-tree-root');
+                rootEl.innerHTML = ''; // Clear existing
                 try {
+                    // Fetch Root Folders Only
                     const res = await fetch(`${API_URL}/files`);
                     if(!res.ok) throw new Error();
-                    const treeData = await res.json();
+                    const rootItems = await res.json();
                     
                     this.updateStatus(true);
-                    this.renderTree(treeData);
                     document.getElementById('empty-state').innerHTML = '<p>Select a file from the explorer.</p>';
+                    
+                    // Render Roots
+                    this.renderChildren(rootItems, rootEl, 0);
                 } catch (e) {
+                    console.error(e);
                     this.updateStatus(false);
                 }
             },
@@ -95,61 +97,84 @@
                 el.innerHTML = `<i class="fa-solid fa-circle text-[8px]"></i> ${online ? 'Connected' : 'Disconnected'}`;
             },
 
-            // --- Tree Logic ---
-            renderTree(data) {
-                const container = document.getElementById('file-tree');
-                container.innerHTML = this.buildHtml(data, '');
-            },
+            // --- Lazy Loading Tree Logic ---
+            
+            async toggleFolder(path, elementId) {
+                const container = document.getElementById(elementId);
+                const icon = document.getElementById(`icon-${elementId}`);
+                
+                if (container.classList.contains('hidden')) {
+                    // EXPANDING
+                    container.classList.remove('hidden');
+                    icon.classList.replace('fa-chevron-right', 'fa-chevron-down');
+                    icon.classList.replace('fa-folder', 'fa-folder-open');
 
-            buildHtml(node, path) {
-                let html = '';
-                // Sort: Folders first
-                const entries = Object.entries(node).sort((a, b) => {
-                    const aIsFile = a[1] === '__FILE__';
-                    const bIsFile = b[1] === '__FILE__';
-                    if(aIsFile === bIsFile) return a[0].localeCompare(b[0]);
-                    return aIsFile ? 1 : -1;
-                });
-
-                for (const [name, val] of entries) {
-                    const fullPath = path ? `${path}/${name}` : name;
-                    const isFile = val === '__FILE__';
-                    const padding = (fullPath.split('/').length * 12) + 12;
-
-                    if (isFile) {
-                        html += `
-                        <div class="group flex items-center justify-between py-1 pr-2 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100" style="padding-left:${padding}px" onclick="app.loadFile('${fullPath}')">
-                            <div class="flex items-center gap-2 truncate flex-1">
-                                <i class="fa-regular fa-file-lines text-blue-400 text-xs"></i> <span class="truncate">${name}</span>
-                            </div>
-                            <div class="hidden group-hover:flex gap-1">
-                                <button onclick="app.runTest('${fullPath}', event)" title="Run Test" class="bg-green-700 hover:bg-green-600 text-white px-1.5 rounded text-[10px]"><i class="fa-solid fa-play"></i></button>
-                                <button onclick="app.copyPath('${fullPath}', event)" title="Copy Path" class="bg-gray-600 hover:bg-gray-500 text-white px-1.5 rounded text-[10px]"><i class="fa-solid fa-copy"></i></button>
-                            </div>
-                        </div>`;
-                    } else {
-                        const isExpanded = this.expanded.has(fullPath);
-                        html += `
-                        <div>
-                            <div class="flex items-center py-1 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100" style="padding-left:${padding-14}px" onclick="app.toggle('${fullPath}')">
-                                <i class="fa-solid ${isExpanded ? 'fa-chevron-down' : 'fa-chevron-right'} text-[10px] w-4 text-center mr-1"></i>
-                                <i class="fa-solid ${isExpanded ? 'fa-folder-open' : 'fa-folder'} text-yellow-600 text-xs mr-2"></i>
-                                <span>${name}</span>
-                            </div>
-                            <div class="${isExpanded ? 'block' : 'hidden'}">${this.buildHtml(val, fullPath)}</div>
-                        </div>`;
+                    // If empty, fetch data (Lazy Load)
+                    if (container.innerHTML === '') {
+                        // Show loading spinner temporarily
+                        container.innerHTML = `<div class="pl-8 py-1 text-gray-500"><i class="fa-solid fa-spinner spin mr-2"></i>Loading...</div>`;
+                        
+                        try {
+                            const res = await fetch(`${API_URL}/files?path=${encodeURIComponent(path)}`);
+                            const items = await res.json();
+                            container.innerHTML = ''; // Clear spinner
+                            this.renderChildren(items, container, parseInt(container.dataset.depth));
+                        } catch (e) {
+                            container.innerHTML = `<div class="pl-8 text-red-500">Error loading</div>`;
+                        }
                     }
+                } else {
+                    // COLLAPSING
+                    container.classList.add('hidden');
+                    icon.classList.replace('fa-chevron-down', 'fa-chevron-right');
+                    icon.classList.replace('fa-folder-open', 'fa-folder');
                 }
-                return html;
             },
 
-            toggle(path) {
-                if(this.expanded.has(path)) this.expanded.delete(path);
-                else this.expanded.add(path);
-                this.init(); // Re-fetch to refresh tree
+            renderChildren(items, container, depth) {
+                if(items.length === 0) {
+                    container.innerHTML = `<div class="py-1 text-gray-600 italic" style="padding-left:${(depth+1)*12 + 12}px">Empty</div>`;
+                    return;
+                }
+
+                items.forEach((item, index) => {
+                    // Create unique ID for DOM manipulation
+                    const uniqueId = `node-${item.path.replace(/[^a-zA-Z0-9]/g, '-')}-${index}`; 
+                    const padding = (depth * 12) + 12;
+                    const itemDiv = document.createElement('div');
+
+                    if (item.type === 'dir') {
+                        itemDiv.innerHTML = `
+                            <div>
+                                <div class="flex items-center py-1 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors" 
+                                     style="padding-left:${padding}px" 
+                                     onclick="app.toggleFolder('${item.path}', '${uniqueId}')">
+                                    <i id="icon-${uniqueId}" class="fa-solid fa-chevron-right text-[10px] w-4 text-center mr-1 transition-transform"></i>
+                                    <i class="fa-solid fa-folder text-yellow-600 text-xs mr-2"></i>
+                                    <span class="truncate">${item.name}</span>
+                                </div>
+                                <div id="${uniqueId}" data-depth="${depth+1}" class="hidden"></div>
+                            </div>`;
+                    } else {
+                        itemDiv.innerHTML = `
+                            <div class="group flex items-center justify-between py-1 pr-2 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors" 
+                                 style="padding-left:${padding + 14}px" 
+                                 onclick="app.loadFile('${item.path}')">
+                                <div class="flex items-center gap-2 truncate flex-1">
+                                    <i class="fa-regular fa-file-lines text-blue-400 text-xs"></i> 
+                                    <span class="truncate">${item.name}</span>
+                                </div>
+                                <div class="hidden group-hover:flex gap-1">
+                                    <button onclick="app.runTest('${item.path}', event)" title="Run Test" class="bg-green-700 hover:bg-green-600 text-white px-1.5 rounded text-[10px]"><i class="fa-solid fa-play"></i></button>
+                                    <button onclick="app.copyPath('${item.path}', event)" title="Copy Path" class="bg-gray-600 hover:bg-gray-500 text-white px-1.5 rounded text-[10px]"><i class="fa-solid fa-copy"></i></button>
+                                </div>
+                            </div>`;
+                    }
+                    container.appendChild(itemDiv);
+                });
             },
 
-            // --- File Logic ---
+            // --- File Logic (Same as before) ---
             async loadFile(path) {
                 this.currentFile = path;
                 const res = await fetch(`${API_URL}/read?path=${encodeURIComponent(path)}`);
@@ -177,12 +202,10 @@
                     editor.setAttribute('contenteditable', 'true');
                 }
 
-                // Render content with links
                 editor.innerHTML = this.parseContent(data.content);
             },
 
             parseContent(text) {
-                // Regex to find TFEconfig/OFEconfig lines
                 return text.replace(/((?:TFE|OFE)config\s*=\s*)(Calibration\/[\w\.\-_]+)/g, 
                     '$1<span class="config-link" onclick="app.openExternal(\'$2\')">$2</span>');
             },
@@ -193,7 +216,7 @@
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ path: this.currentFile })
                 });
-                this.loadFile(this.currentFile); // Reload to update UI
+                this.loadFile(this.currentFile);
             },
 
             async saveCurrent() {
@@ -212,7 +235,6 @@
                 });
             },
 
-            // --- Actions ---
             async runTest(path, e) {
                 if(e) e.stopPropagation();
                 const term = document.getElementById('terminal-out');
@@ -234,7 +256,6 @@
             }
         };
 
-        // Start
         app.init();
     </script>
 </body>
