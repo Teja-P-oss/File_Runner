@@ -153,10 +153,6 @@
                     const uniqueId = `node-${item.path.replace(/[^a-zA-Z0-9]/g, '-')}-${index}`; 
                     const padding = (depth * 12) + 12;
                     const itemDiv = document.createElement('div');
-                    
-                    // Check if file is an .ini file
-                    const isIni = item.name.toLowerCase().endsWith('.ini');
-
                     if (item.type === 'dir') {
                         itemDiv.innerHTML = `
                             <div>
@@ -168,6 +164,9 @@
                                 <div id="${uniqueId}" data-depth="${depth+1}" class="hidden"></div>
                             </div>`;
                     } else {
+                        // CHECK IF FILE IS .INI
+                        const isIni = item.name.toLowerCase().endsWith('.ini');
+                        
                         itemDiv.innerHTML = `
                             <div class="group flex items-center justify-between py-1 pr-2 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors" style="padding-left:${padding + 14}px" onclick="app.loadFile('${item.path}')">
                                 <div class="flex items-center gap-2 truncate flex-1">
