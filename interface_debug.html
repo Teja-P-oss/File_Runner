@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Manager - DEBUG MODE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #1e1e1e; color: #ccc; font-family: sans-serif; }
+        .debug-box { background: #330000; border: 1px solid red; color: #ff9999; padding: 10px; margin: 10px; font-family: monospace; white-space: pre-wrap; }
+        .success-box { background: #003300; border: 1px solid green; color: #99ff99; padding: 10px; margin: 10px; }
+    </style>
+</head>
+<body class="h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-gray-800 p-4 border-b border-gray-700 flex justify-between items-center">
+        <h1 class="font-bold text-white">Test Manager (Debug Mode)</h1>
+        <div id="status" class="text-red-500 font-bold">Disconnected</div>
+    </header>
+
+    <!-- Debug Output Area -->
+    <div id="debug-area" class="p-4 flex-1 overflow-auto">
+        <p>Initializing...</p>
+    </div>
+
+    <script>
+        const API_URL = 'http://127.0.0.1:5001/api';
+
+        function log(msg, type='info') {
+            const area = document.getElementById('debug-area');
+            const div = document.createElement('div');
+            div.className = type === 'error' ? 'debug-box' : (type === 'success' ? 'success-box' : 'mb-2 text-gray-400');
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            area.appendChild(div);
+        }
+
+        async function init() {
+            log(`Attempting to fetch from ${API_URL}/files...`);
+            
+            try {
+                const res = await fetch(`${API_URL}/files`);
+                log(`Server responded with status: ${res.status}`);
+                
+                if (!res.ok) {
+                    throw new Error(`Server returned HTTP error: ${res.status}`);
+                }
+
+                const textData = await res.text();
+                log(`Raw data received (first 100 chars): ${textData.substring(0, 100)}...`);
+
+                let treeData;
+                try {
+                    treeData = JSON.parse(textData);
+                    log("JSON parsed successfully.", "success");
+                } catch (e) {
+                    throw new Error("Failed to parse JSON. Server might be sending text instead of JSON.");
+                }
+
+                // Attempt to render
+                log("Attempting to render tree...");
+                renderTree(treeData);
+                
+                document.getElementById('status').innerText = "Connected";
+                document.getElementById('status').className = "text-green-500 font-bold";
+                log("System Ready!", "success");
+
+            } catch (e) {
+                console.error(e);
+                document.getElementById('status').innerText = "Error";
+                log(`CRITICAL ERROR: ${e.message}`, "error");
+                if (e.message.includes("Failed to fetch")) {
+                    log("HINT: Check if server.py is running. Check if your browser blocks 'localhost' access (try using Chrome or Edge).", "error");
+                }
+            }
+        }
+
+        function renderTree(data) {
+            // Check if data is empty
+            if (!data || Object.keys(data).length === 0) {
+                log("Warning: Received empty file list. Are the folders 'Tests', 'Calibration', 'src' inside the folder where server.py is running?", "error");
+                return;
+            }
+            
+            // Simple render logic to test valid structure
+            const container = document.createElement('div');
+            container.innerHTML = buildHtml(data, '');
+            document.getElementById('debug-area').appendChild(container);
+        }
+
+        function buildHtml(node, path) {
+            let html = '<ul class="ml-4">';
+            for (const [key, val] of Object.entries(node)) {
+                if (val === '__FILE__') {
+                    html += `<li class="text-blue-300">📄 ${key}</li>`;
+                } else {
+                    html += `<li class="text-yellow-500">📁 ${key}`;
+                    html += buildHtml(val, path + '/' + key);
+                    html += `</li>`;
+                }
+            }
+            html += '</ul>';
+            return html;
+        }
+
+        // Start
+        init();
+    </script>
+</body>
+</html>
