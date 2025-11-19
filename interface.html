@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Test Manager</title>
+    <title>FlowSim Tests Manager</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -12,52 +12,80 @@
         ::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 4px; }
         .config-link { color: #4ec9b0; text-decoration: underline; cursor: pointer; }
         .config-link:hover { color: #9cdcfe; }
-        /* Animation for loading spinner */
         .spin { animation: spin 1s linear infinite; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
+        
+        /* Tab Styles */
+        .tab { background: #2d2d2d; color: #9ca3af; border-right: 1px solid #1e1e1e; max-width: 150px; }
+        .tab.active { background: #1e1e1e; color: #e5e7eb; border-top: 2px solid #4ec9b0; }
+        .tab:hover:not(.active) { background: #3e3e42; }
+
+        /* Resizers */
+        .resizer-col { width: 4px; cursor: col-resize; background: #3e3e42; transition: background 0.2s; }
+        .resizer-col:hover, .resizer-col.resizing { background: #007fd4; }
+        .resizer-row { height: 4px; cursor: row-resize; background: #3e3e42; transition: background 0.2s; }
+        .resizer-row:hover, .resizer-row.resizing { background: #007fd4; }
     </style>
 </head>
 <body class="bg-[#1e1e1e] text-gray-300 h-screen flex flex-col font-sans overflow-hidden">
 
     <header class="bg-[#252526] border-b border-[#3e3e42] h-10 flex items-center justify-between px-4 shrink-0 select-none">
         <div class="flex items-center gap-2 text-sm font-semibold text-gray-200">
-            <i class="fa-solid fa-flask text-purple-500"></i> <span>Test Manager</span>
+            <i class="fa-solid fa-flask text-purple-500"></i> <span>FlowSim Tests Manager</span>
         </div>
         <div id="status-indicator" class="text-xs text-red-500 flex items-center gap-2">
             <i class="fa-solid fa-circle text-[8px]"></i> Disconnected
         </div>
     </header>
 
-    <div class="flex-1 flex overflow-hidden">
-        <aside class="w-80 bg-[#252526] border-r border-[#3e3e42] flex flex-col shrink-0">
+    <div class="flex-1 flex overflow-hidden" id="main-layout">
+        
+        <aside id="sidebar" class="w-80 bg-[#252526] flex flex-col shrink-0" style="width: 320px;">
             <div class="px-4 py-2 text-xs font-bold text-gray-500 uppercase border-b border-[#3e3e42]">Explorer</div>
             <div id="file-tree-root" class="flex-1 overflow-y-auto py-2 text-sm"></div>
         </aside>
 
+        <div class="resizer-col" id="resizer-side"></div>
+
         <main class="flex-1 flex flex-col min-w-0 bg-[#1e1e1e]">
+            
+            <div id="tabs-container" class="h-9 bg-[#252526] flex overflow-x-auto overflow-y-hidden select-none scrollbar-hide">
+                </div>
+
             <div id="toolbar" class="h-10 bg-[#2d2d2d] border-b border-[#3e3e42] flex items-center justify-between px-4 hidden">
                 <div class="flex items-center gap-2 text-sm">
                     <i class="fa-regular fa-file-lines text-blue-400"></i>
-                    <span id="filename" class="font-medium text-gray-200"></span>
+                    <span id="filename" class="font-medium text-gray-200">No File</span>
                     <span id="lock-badge" class="ml-2 px-1.5 text-[10px] border border-red-500 text-red-400 rounded cursor-pointer hover:bg-red-900/30 hidden" onclick="app.unlockCurrent()">
                         <i class="fa-solid fa-lock mr-1"></i>LOCKED
                     </span>
                 </div>
-                <button onclick="app.saveCurrent()" id="btn-save" class="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded transition disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
+                <div class="flex gap-2">
+                    <button onclick="app.saveCurrent()" id="btn-save" class="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded transition disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
+                </div>
             </div>
 
-            <div id="editor-container" class="flex-1 overflow-auto font-mono text-sm leading-6 p-4 outline-none whitespace-pre hidden" contenteditable="false"></div>
-
-            <div id="empty-state" class="flex-1 flex flex-col items-center justify-center text-gray-600">
-                <i class="fa-solid fa-server text-4xl mb-4"></i>
-                <p>Waiting for server at localhost:5000...</p>
-                <button onclick="app.init()" class="mt-4 text-xs underline">Retry Connection</button>
+            <div id="editor-wrapper" class="flex-1 relative overflow-hidden flex flex-col">
+                <div id="editor-container" class="flex-1 overflow-auto font-mono text-sm leading-6 p-4 outline-none whitespace-pre hidden" contenteditable="false"></div>
+                
+                <div id="empty-state" class="flex-1 flex flex-col items-center justify-center text-gray-600">
+                    <i class="fa-solid fa-server text-4xl mb-4"></i>
+                    <p>Waiting for server at localhost:5000...</p>
+                    <button onclick="app.init()" class="mt-4 text-xs underline">Retry Connection</button>
+                </div>
             </div>
 
-            <div class="h-48 bg-[#1e1e1e] border-t border-[#3e3e42] flex flex-col shrink-0 font-mono text-xs">
+            <div class="resizer-row" id="resizer-term"></div>
+
+            <div id="terminal-panel" class="h-48 bg-[#1e1e1e] flex flex-col shrink-0 font-mono text-xs" style="height: 192px;">
                 <div class="flex justify-between items-center px-4 py-1 bg-[#252526] border-b border-[#3e3e42]">
                     <span class="text-gray-400 uppercase">Output</span>
-                    <button onclick="document.getElementById('terminal-out').innerText=''" class="hover:text-white"><i class="fa-solid fa-trash"></i></button>
+                    <div class="flex gap-2">
+                        <button id="btn-stop" onclick="app.stopTest()" class="hidden text-red-400 hover:text-red-300 mr-2">
+                            <i class="fa-solid fa-stop"></i> STOP
+                        </button>
+                        <button onclick="document.getElementById('terminal-out').innerText=''" class="hover:text-white"><i class="fa-solid fa-trash"></i></button>
+                    </div>
                 </div>
                 <div id="terminal-out" class="flex-1 overflow-y-auto p-2 text-green-400 whitespace-pre-wrap"></div>
             </div>
@@ -68,22 +96,20 @@
         const API_URL = 'http://localhost:5000/api';
         
         const app = {
-            currentFile: null,
-            loadedFolders: new Set(), // Keeps track of folders we've already fetched
+            tabs: [], // Array of { path, content, locked, name }
+            activeTab: null,
+            currentTestId: null,
 
             async init() {
                 const rootEl = document.getElementById('file-tree-root');
-                rootEl.innerHTML = ''; // Clear existing
+                rootEl.innerHTML = ''; 
                 try {
-                    // Fetch Root Folders Only
                     const res = await fetch(`${API_URL}/files`);
                     if(!res.ok) throw new Error();
                     const rootItems = await res.json();
                     
                     this.updateStatus(true);
                     document.getElementById('empty-state').innerHTML = '<p>Select a file from the explorer.</p>';
-                    
-                    // Render Roots
                     this.renderChildren(rootItems, rootEl, 0);
                 } catch (e) {
                     console.error(e);
@@ -97,34 +123,24 @@
                 el.innerHTML = `<i class="fa-solid fa-circle text-[8px]"></i> ${online ? 'Connected' : 'Disconnected'}`;
             },
 
-            // --- Lazy Loading Tree Logic ---
-            
+            // --- Tree Logic ---
             async toggleFolder(path, elementId) {
                 const container = document.getElementById(elementId);
                 const icon = document.getElementById(`icon-${elementId}`);
-                
                 if (container.classList.contains('hidden')) {
-                    // EXPANDING
                     container.classList.remove('hidden');
                     icon.classList.replace('fa-chevron-right', 'fa-chevron-down');
                     icon.classList.replace('fa-folder', 'fa-folder-open');
-
-                    // If empty, fetch data (Lazy Load)
                     if (container.innerHTML === '') {
-                        // Show loading spinner temporarily
                         container.innerHTML = `<div class="pl-8 py-1 text-gray-500"><i class="fa-solid fa-spinner spin mr-2"></i>Loading...</div>`;
-                        
                         try {
                             const res = await fetch(`${API_URL}/files?path=${encodeURIComponent(path)}`);
                             const items = await res.json();
-                            container.innerHTML = ''; // Clear spinner
+                            container.innerHTML = ''; 
                             this.renderChildren(items, container, parseInt(container.dataset.depth));
-                        } catch (e) {
-                            container.innerHTML = `<div class="pl-8 text-red-500">Error loading</div>`;
-                        }
+                        } catch (e) { container.innerHTML = `<div class="pl-8 text-red-500">Error loading</div>`; }
                     }
                 } else {
-                    // COLLAPSING
                     container.classList.add('hidden');
                     icon.classList.replace('fa-chevron-down', 'fa-chevron-right');
                     icon.classList.replace('fa-folder-open', 'fa-folder');
@@ -136,19 +152,14 @@
                     container.innerHTML = `<div class="py-1 text-gray-600 italic" style="padding-left:${(depth+1)*12 + 12}px">Empty</div>`;
                     return;
                 }
-
                 items.forEach((item, index) => {
-                    // Create unique ID for DOM manipulation
                     const uniqueId = `node-${item.path.replace(/[^a-zA-Z0-9]/g, '-')}-${index}`; 
                     const padding = (depth * 12) + 12;
                     const itemDiv = document.createElement('div');
-
                     if (item.type === 'dir') {
                         itemDiv.innerHTML = `
                             <div>
-                                <div class="flex items-center py-1 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors" 
-                                     style="padding-left:${padding}px" 
-                                     onclick="app.toggleFolder('${item.path}', '${uniqueId}')">
+                                <div class="flex items-center py-1 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors" style="padding-left:${padding}px" onclick="app.toggleFolder('${item.path}', '${uniqueId}')">
                                     <i id="icon-${uniqueId}" class="fa-solid fa-chevron-right text-[10px] w-4 text-center mr-1 transition-transform"></i>
                                     <i class="fa-solid fa-folder text-yellow-600 text-xs mr-2"></i>
                                     <span class="truncate">${item.name}</span>
@@ -157,9 +168,7 @@
                             </div>`;
                     } else {
                         itemDiv.innerHTML = `
-                            <div class="group flex items-center justify-between py-1 pr-2 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors" 
-                                 style="padding-left:${padding + 14}px" 
-                                 onclick="app.loadFile('${item.path}')">
+                            <div class="group flex items-center justify-between py-1 pr-2 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors" style="padding-left:${padding + 14}px" onclick="app.loadFile('${item.path}')">
                                 <div class="flex items-center gap-2 truncate flex-1">
                                     <i class="fa-regular fa-file-lines text-blue-400 text-xs"></i> 
                                     <span class="truncate">${item.name}</span>
@@ -174,56 +183,140 @@
                 });
             },
 
-            // --- File Logic (Same as before) ---
+            // --- Tab & File Logic ---
             async loadFile(path) {
-                this.currentFile = path;
+                // Check if already open
+                const existingTab = this.tabs.find(t => t.path === path);
+                if (existingTab) {
+                    this.activateTab(path);
+                    return;
+                }
+
                 const res = await fetch(`${API_URL}/read?path=${encodeURIComponent(path)}`);
                 const data = await res.json();
 
-                document.getElementById('empty-state').classList.add('hidden');
-                document.getElementById('editor-container').classList.remove('hidden');
-                document.getElementById('toolbar').classList.remove('hidden');
-                document.getElementById('toolbar').classList.add('flex');
+                const newTab = {
+                    path: path,
+                    name: path.split('/').pop(),
+                    content: data.content,
+                    locked: data.locked
+                };
+                this.tabs.push(newTab);
+                this.activateTab(path);
+            },
 
-                document.getElementById('filename').innerText = path.split('/').pop();
+            activateTab(path) {
+                const tab = this.tabs.find(t => t.path === path);
+                if(!tab) return;
+                this.activeTab = tab;
+                this.renderTabs();
+                this.renderEditor();
+            },
+
+            closeTab(path, e) {
+                if(e) e.stopPropagation();
+                const idx = this.tabs.findIndex(t => t.path === path);
+                if(idx === -1) return;
                 
-                // Handle Locking
+                // Determine new active tab
+                let newActive = null;
+                if (this.activeTab && this.activeTab.path === path) {
+                    if (this.tabs.length > 1) {
+                        newActive = this.tabs[idx === 0 ? 1 : idx - 1];
+                    }
+                } else {
+                    newActive = this.activeTab;
+                }
+
+                this.tabs.splice(idx, 1);
+                
+                if(newActive) {
+                    this.activateTab(newActive.path);
+                } else {
+                    this.activeTab = null;
+                    this.renderTabs();
+                    this.renderEditor();
+                }
+            },
+
+            renderTabs() {
+                const container = document.getElementById('tabs-container');
+                container.innerHTML = this.tabs.map(t => `
+                    <div class="tab flex items-center justify-between px-3 text-xs cursor-pointer shrink-0 ${this.activeTab && this.activeTab.path === t.path ? 'active' : ''}" onclick="app.activateTab('${t.path}')">
+                        <span class="truncate mr-2">${t.name}</span>
+                        <i class="fa-solid fa-xmark hover:text-white rounded p-0.5" onclick="app.closeTab('${t.path}', event)"></i>
+                    </div>
+                `).join('');
+            },
+
+            renderEditor() {
+                const emptyState = document.getElementById('empty-state');
+                const editorCont = document.getElementById('editor-container');
+                const toolbar = document.getElementById('toolbar');
+
+                if (!this.activeTab) {
+                    emptyState.classList.remove('hidden');
+                    editorCont.classList.add('hidden');
+                    toolbar.classList.add('hidden');
+                    return;
+                }
+
+                emptyState.classList.add('hidden');
+                editorCont.classList.remove('hidden');
+                toolbar.classList.remove('hidden');
+                toolbar.classList.add('flex');
+
+                document.getElementById('filename').innerText = this.activeTab.name;
+
+                // Locking
                 const badge = document.getElementById('lock-badge');
                 const saveBtn = document.getElementById('btn-save');
-                const editor = document.getElementById('editor-container');
                 
-                if(data.locked) {
+                if(this.activeTab.locked) {
                     badge.classList.remove('hidden');
                     saveBtn.disabled = true;
-                    editor.setAttribute('contenteditable', 'false');
+                    editorCont.setAttribute('contenteditable', 'false');
                 } else {
                     badge.classList.add('hidden');
                     saveBtn.disabled = false;
-                    editor.setAttribute('contenteditable', 'true');
+                    editorCont.setAttribute('contenteditable', 'true');
                 }
 
-                editor.innerHTML = this.parseContent(data.content);
+                // If content changed in UI, preserve it? For minimal code, we just re-render stored content
+                // Note: In a real app, we should save state on tab switch. 
+                // Here we re-render from memory.
+                editorCont.innerHTML = this.parseContent(this.activeTab.content);
             },
 
             parseContent(text) {
-                return text.replace(/((?:TFE|OFE)config\s*=\s*)(Calibration\/[\w\.\-_]+)/g, 
+                // Updated Regex for Calibration paths (supports \ and /)
+                // Group 1: Key + = + whitespace
+                // Group 2: Value starting with Calibration
+                return text.replace(/(=\s*)(Calibration[\\\/][\w\.\-\\]+)/g, 
                     '$1<span class="config-link" onclick="app.openExternal(\'$2\')">$2</span>');
             },
 
             async unlockCurrent() {
-                if(!this.currentFile) return;
+                if(!this.activeTab) return;
                 await fetch(`${API_URL}/unlock`, {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ path: this.currentFile })
+                    body: JSON.stringify({ path: this.activeTab.path })
                 });
-                this.loadFile(this.currentFile);
+                // Reload content
+                const res = await fetch(`${API_URL}/read?path=${encodeURIComponent(this.activeTab.path)}`);
+                const data = await res.json();
+                this.activeTab.content = data.content;
+                this.activeTab.locked = data.locked;
+                this.renderEditor();
             },
 
             async saveCurrent() {
+                if(!this.activeTab) return;
                 const content = document.getElementById('editor-container').innerText;
+                this.activeTab.content = content; // Update local state
                 await fetch(`${API_URL}/save`, {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ path: this.currentFile, content })
+                    body: JSON.stringify({ path: this.activeTab.path, content })
                 });
                 alert("Saved!");
             },
@@ -238,15 +331,36 @@
             async runTest(path, e) {
                 if(e) e.stopPropagation();
                 const term = document.getElementById('terminal-out');
-                term.innerText += `\n> Running test for ${path}...\n`;
+                const stopBtn = document.getElementById('btn-stop');
                 
-                const res = await fetch(`${API_URL}/run-test`, {
+                term.innerText += `\n> Running test for ${path}...\n`;
+                stopBtn.classList.remove('hidden');
+                
+                // Generate a generic Test ID to allow stopping
+                this.currentTestId = Date.now().toString();
+
+                try {
+                    const res = await fetch(`${API_URL}/run-test`, {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ target: path, testId: this.currentTestId })
+                    });
+                    const data = await res.json();
+                    term.innerText += data.output + "\n-------------------\n";
+                } catch(err) {
+                    term.innerText += "\nError communicating with server.\n";
+                } finally {
+                    stopBtn.classList.add('hidden');
+                    this.currentTestId = null;
+                    term.scrollTop = term.scrollHeight;
+                }
+            },
+
+            async stopTest() {
+                if(!this.currentTestId) return;
+                await fetch(`${API_URL}/stop-test`, {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ target: path })
+                    body: JSON.stringify({ testId: this.currentTestId })
                 });
-                const data = await res.json();
-                term.innerText += data.output + "\n-------------------\n";
-                term.scrollTop = term.scrollHeight;
             },
 
             copyPath(path, e) {
@@ -255,6 +369,43 @@
                 alert("Path copied: " + path);
             }
         };
+
+        // --- Resizing Logic ---
+        const setupResizer = (resizerId, elementId, isRow) => {
+            const resizer = document.getElementById(resizerId);
+            const element = document.getElementById(elementId);
+            
+            resizer.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                resizer.classList.add('resizing');
+                document.body.style.cursor = isRow ? 'row-resize' : 'col-resize';
+                
+                const onMouseMove = (e) => {
+                    if (isRow) {
+                        const newHeight = window.innerHeight - e.clientY;
+                        if(newHeight > 50 && newHeight < window.innerHeight - 100)
+                            element.style.height = newHeight + 'px';
+                    } else {
+                        const newWidth = e.clientX;
+                        if(newWidth > 150 && newWidth < 600)
+                            element.style.width = newWidth + 'px';
+                    }
+                };
+                
+                const onMouseUp = () => {
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                    resizer.classList.remove('resizing');
+                    document.body.style.cursor = '';
+                };
+                
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+        };
+
+        setupResizer('resizer-side', 'sidebar', false);
+        setupResizer('resizer-term', 'terminal-panel', true);
 
         app.init();
     </script>
