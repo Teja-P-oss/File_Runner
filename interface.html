@@ -33,8 +33,26 @@
         <div class="flex items-center gap-2 text-sm font-semibold text-gray-200">
             <i class="fa-solid fa-flask text-purple-500"></i> <span>FlowSim Tests Manager</span>
         </div>
-        <div id="status-indicator" class="text-xs text-red-500 flex items-center gap-2">
-            <i class="fa-solid fa-circle text-[8px]"></i> Disconnected
+
+        <div class="flex items-center gap-3">
+            <div id="status-indicator" class="text-xs text-red-500 flex items-center gap-2 border-r border-[#3e3e42] pr-3 h-5">
+                <i class="fa-solid fa-circle text-[8px]"></i> Disconnected
+            </div>
+
+            <div class="relative">
+                <button onclick="app.toggleQuickLinks(event)" class="px-2 py-1 text-xs bg-[#3e3e42] hover:bg-[#4e4e52] text-gray-200 rounded flex items-center gap-2 transition">
+                    <i class="fa-solid fa-link text-blue-400"></i> Quick Links <i class="fa-solid fa-caret-down text-[10px]"></i>
+                </button>
+                <div id="quick-links-menu" class="hidden absolute right-0 top-full mt-1 w-40 bg-[#252526] border border-[#3e3e42] rounded shadow-xl z-50 flex flex-col py-1">
+                    <a href="#" class="px-4 py-2 text-xs text-gray-300 hover:bg-[#007fd4] hover:text-white">Documentation</a>
+                    <a href="#" class="px-4 py-2 text-xs text-gray-300 hover:bg-[#007fd4] hover:text-white">Jira Dashboard</a>
+                    <a href="#" class="px-4 py-2 text-xs text-gray-300 hover:bg-[#007fd4] hover:text-white">GitHub Repo</a>
+                </div>
+            </div>
+
+            <button disabled class="px-2 py-1 text-xs bg-purple-600 text-white rounded flex items-center gap-2 opacity-50 cursor-not-allowed">
+                <i class="fa-solid fa-robot"></i> Ask Flowsim AI
+            </button>
         </div>
     </header>
 
@@ -117,8 +135,16 @@
 
             updateStatus(online) {
                 const el = document.getElementById('status-indicator');
-                el.className = `text-xs ${online ? 'text-green-500' : 'text-red-500'} flex items-center gap-2`;
+                // Removed "text-red-500" from base string so class update works fully
+                el.className = `text-xs ${online ? 'text-green-500' : 'text-red-500'} flex items-center gap-2 border-r border-[#3e3e42] pr-3 h-5`;
                 el.innerHTML = `<i class="fa-solid fa-circle text-[8px]"></i> ${online ? 'Connected' : 'Disconnected'}`;
+            },
+            
+            // ADDED: Function to toggle dropdown
+            toggleQuickLinks(e) {
+                e.stopPropagation();
+                const menu = document.getElementById('quick-links-menu');
+                menu.classList.toggle('hidden');
             },
 
             async toggleFolder(path, elementId) {
@@ -266,10 +292,7 @@
             },
 
             parseContent(text) {
-                // FIX: Regex now captures until a space or newline ([^\s\r\n]+).
-                // This ensures the entire path is grabbed, regardless of underscores, dots, or depth.
                 return text.replace(/(=\s*)(Calibration[\\\/][^\s\r\n]+)/g, (match, prefix, path) => {
-                    // Escape backslashes for JS string literal
                     const safePath = path.replace(/\\/g, '\\\\');
                     return `${prefix}<span class="config-link" onclick="app.openExternal('${safePath}')">${path}</span>`;
                 });
@@ -344,6 +367,14 @@
                 alert("Path copied: " + path);
             }
         };
+
+        // ADDED: Close dropdown when clicking outside
+        window.onclick = function(event) {
+            if (!event.target.closest('.relative')) {
+                const dropdowns = document.querySelectorAll('#quick-links-menu');
+                dropdowns.forEach(d => d.classList.add('hidden'));
+            }
+        }
 
         const setupResizer = (resizerId, elementId, isRow) => {
             const resizer = document.getElementById(resizerId);
