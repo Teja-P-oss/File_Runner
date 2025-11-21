@@ -43,10 +43,24 @@
                 <button onclick="app.toggleQuickLinks(event)" class="px-2 py-1 text-xs bg-[#3e3e42] hover:bg-[#4e4e52] text-gray-200 rounded flex items-center gap-2 transition">
                     <i class="fa-solid fa-link text-blue-400"></i> Quick Links <i class="fa-solid fa-caret-down text-[10px]"></i>
                 </button>
-                <div id="quick-links-menu" class="hidden absolute right-0 top-full mt-1 w-40 bg-[#252526] border border-[#3e3e42] rounded shadow-xl z-50 flex flex-col py-1">
-                    <a href="#" class="px-4 py-2 text-xs text-gray-300 hover:bg-[#007fd4] hover:text-white">Documentation</a>
-                    <a href="#" class="px-4 py-2 text-xs text-gray-300 hover:bg-[#007fd4] hover:text-white">Jira Dashboard</a>
-                    <a href="#" class="px-4 py-2 text-xs text-gray-300 hover:bg-[#007fd4] hover:text-white">GitHub Repo</a>
+                
+                <div id="quick-links-menu" class="hidden absolute right-0 top-full mt-1 w-48 bg-[#252526] border border-[#3e3e42] rounded shadow-xl z-50 flex flex-col py-1">
+                    <a href="https://www.google.com" target="_blank" class="px-4 py-2 text-xs text-gray-300 hover:bg-[#007fd4] hover:text-white block">Confluence</a>
+                    <a href="https://www.google.com" target="_blank" class="px-4 py-2 text-xs text-gray-300 hover:bg-[#007fd4] hover:text-white block">Jira</a>
+                    <a href="https://www.google.com" target="_blank" class="px-4 py-2 text-xs text-gray-300 hover:bg-[#007fd4] hover:text-white block">Jenkins Dashboard</a>
+                    
+                    <div class="relative group">
+                        <div class="px-4 py-2 text-xs text-gray-300 hover:bg-[#007fd4] hover:text-white cursor-pointer flex justify-between items-center">
+                            <span>Visios</span>
+                            <i class="fa-solid fa-caret-right text-[10px]"></i>
+                        </div>
+                        
+                        <div class="hidden group-hover:block absolute left-full top-0 w-40 bg-[#252526] border border-[#3e3e42] rounded shadow-xl -ml-1">
+                            <a href="https://www.google.com" target="_blank" class="px-4 py-2 text-xs text-gray-300 hover:bg-[#007fd4] hover:text-white block">System Arch</a>
+                            <a href="https://www.google.com" target="_blank" class="px-4 py-2 text-xs text-gray-300 hover:bg-[#007fd4] hover:text-white block">Data Flow</a>
+                            <a href="https://www.google.com" target="_blank" class="px-4 py-2 text-xs text-gray-300 hover:bg-[#007fd4] hover:text-white block">Logic Map</a>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -135,12 +149,10 @@
 
             updateStatus(online) {
                 const el = document.getElementById('status-indicator');
-                // Removed "text-red-500" from base string so class update works fully
                 el.className = `text-xs ${online ? 'text-green-500' : 'text-red-500'} flex items-center gap-2 border-r border-[#3e3e42] pr-3 h-5`;
                 el.innerHTML = `<i class="fa-solid fa-circle text-[8px]"></i> ${online ? 'Connected' : 'Disconnected'}`;
             },
             
-            // ADDED: Function to toggle dropdown
             toggleQuickLinks(e) {
                 e.stopPropagation();
                 const menu = document.getElementById('quick-links-menu');
@@ -190,9 +202,7 @@
                                 <div id="${uniqueId}" data-depth="${depth+1}" class="hidden"></div>
                             </div>`;
                     } else {
-                        // CHECK IF FILE IS .INI
                         const isIni = item.name.toLowerCase().endsWith('.ini');
-                        
                         itemDiv.innerHTML = `
                             <div class="group flex items-center justify-between py-1 pr-2 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors" style="padding-left:${padding + 14}px" onclick="app.loadFile('${item.path}')">
                                 <div class="flex items-center gap-2 truncate flex-1">
@@ -368,7 +378,6 @@
             }
         };
 
-        // ADDED: Close dropdown when clicking outside
         window.onclick = function(event) {
             if (!event.target.closest('.relative')) {
                 const dropdowns = document.querySelectorAll('#quick-links-menu');
