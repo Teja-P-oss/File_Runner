@@ -12,7 +12,7 @@ CORS(app)
 ROOT_DIR = os.getcwd()
 
 # Allowed root directories
-ALLOWED_ROOTS = ['Tests', 'Calibration', 'src']
+ALLOWED_ROOTS = ['Tests', 'Calibration', 'Interfaces']
 
 # Global registry for running processes { 'test_id': subprocess.Popen }
 active_tests = {}
