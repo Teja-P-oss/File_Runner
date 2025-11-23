@@ -108,6 +108,7 @@
                     </span>
                 </div>
                 <div class="flex gap-2">
+                    <button onclick="app.runCurrentTest()" id="btn-run-nav" class="hidden px-3 py-1 text-xs bg-green-700 hover:bg-green-600 text-white rounded transition mr-2"><i class="fa-solid fa-play mr-1"></i>Run Test</button>
                     <button onclick="app.saveCurrent()" id="btn-save" class="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded transition disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
                 </div>
             </div>
@@ -150,7 +151,6 @@
             searchController: null, 
 
             async init() {
-                // Change 3: Init now targets base tree only
                 const rootEl = document.getElementById('file-tree-base');
                 rootEl.innerHTML = ''; 
                 try {
@@ -173,11 +173,9 @@
 
                 if (query.trim().length > 0) {
                     clearBtn.classList.remove('hidden');
-                    // Show search, hide tree
                     treeBase.classList.add('hidden');
                     searchRes.classList.remove('hidden');
                 } else {
-                    // Restore original view state
                     this.clearSearchState();
                     return;
                 }
@@ -185,7 +183,6 @@
                 if (this.searchController) this.searchController.abort();
                 clearTimeout(this.searchTimer);
 
-                // Change 4: Faster Debounce (150ms)
                 this.searchTimer = setTimeout(async () => {
                     this.searchController = new AbortController();
                     const signal = this.searchController.signal;
@@ -204,12 +201,11 @@
                 }, 150); 
             },
 
-            // Change 5: Helper to reset UI without re-init
             clearSearchState() {
                 document.getElementById('search-clear').classList.add('hidden');
                 document.getElementById('file-tree-base').classList.remove('hidden');
                 document.getElementById('search-results').classList.add('hidden');
-                document.getElementById('search-results').innerHTML = ''; // Clean up
+                document.getElementById('search-results').innerHTML = '';
             },
 
             clearSearch() {
@@ -259,7 +255,6 @@
                     return;
                 }
                 items.forEach((item, index) => {
-                    // Unique ID generation to safely allow both trees if needed
                     const uniqueId = `node-${(isSearch ? 's-' : '')}${item.path.replace(/[^a-zA-Z0-9]/g, '-')}-${index}`; 
                     const padding = isSearch ? 12 : (depth * 12) + 12; 
                     const itemDiv = document.createElement('div');
@@ -374,7 +369,14 @@
 
                 const badge = document.getElementById('lock-badge');
                 const saveBtn = document.getElementById('btn-save');
+                const runBtn = document.getElementById('btn-run-nav');
                 
+                if(this.activeTab.path.toLowerCase().endsWith('.ini')) {
+                    runBtn.classList.remove('hidden');
+                } else {
+                    runBtn.classList.add('hidden');
+                }
+
                 if(this.activeTab.locked) {
                     badge.classList.remove('hidden');
                     saveBtn.disabled = true;
@@ -388,10 +390,17 @@
             },
 
             parseContent(text) {
-                return text.replace(/(=\s*)(Calibration[\\\/][^\s\r\n]+)/g, (match, prefix, path) => {
+                let html = text.replace(/(=\s*)(Calibration[\\\/][^\s\r\n]+)/g, (match, prefix, path) => {
                     const safePath = path.replace(/\\/g, '\\\\');
                     return `${prefix}<span class="config-link" onclick="app.openExternal('${safePath}')">${path}</span>`;
                 });
+                
+                html = html.replace(/(=\s*)([a-zA-Z_][\w]*(?:\.[\w]+)+)/g, (match, prefix, dotPath) => {
+                    const relPath = 'src/' + dotPath.replace(/\./g, '/') + '.py';
+                    return `${prefix}<span class="config-link" onclick="app.openExternal('${relPath}')">${dotPath}</span>`;
+                });
+                
+                return html;
             },
 
             async unlockCurrent() {
@@ -423,6 +432,10 @@
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ path })
                 });
+            },
+
+            runCurrentTest() {
+                if(this.activeTab) this.runTest(this.activeTab.path);
             },
 
             async runTest(path, e) {
