@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FlowSim Tests Manager</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧪</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -73,7 +74,13 @@
     <div class="flex-1 flex overflow-hidden" id="main-layout">
         
         <aside id="sidebar" class="w-80 bg-[#252526] flex flex-col shrink-0" style="width: 320px;">
-            <div class="px-4 py-2 text-xs font-bold text-gray-500 uppercase border-b border-[#3e3e42]">Explorer</div>
+            <div class="px-4 py-2 border-b border-[#3e3e42]">
+                <div class="text-xs font-bold text-gray-500 uppercase mb-2">Explorer</div>
+                <div class="relative">
+                    <input type="text" id="search-input" placeholder="Search files..." onkeyup="app.handleSearch(this.value)" class="w-full bg-[#1e1e1e] text-gray-300 text-xs border border-[#3e3e42] rounded px-2 py-1 focus:outline-none focus:border-blue-500">
+                    <i class="fa-solid fa-search absolute right-2 top-1.5 text-gray-500 text-[10px]"></i>
+                </div>
+            </div>
             <div id="file-tree-root" class="flex-1 overflow-y-auto py-2 text-sm"></div>
         </aside>
 
@@ -81,7 +88,12 @@
 
         <main class="flex-1 flex flex-col min-w-0 bg-[#1e1e1e]">
             
-            <div id="tabs-container" class="h-9 bg-[#252526] flex overflow-x-auto overflow-y-hidden select-none scrollbar-hide"></div>
+            <div class="flex bg-[#252526] h-9">
+                <div id="tabs-container" class="flex-1 flex overflow-x-auto overflow-y-hidden select-none scrollbar-hide"></div>
+                <button onclick="app.closeAllTabs()" title="Close All" class="px-3 hover:bg-red-900/50 text-gray-400 hover:text-white border-l border-[#3e3e42] flex items-center">
+                    <i class="fa-solid fa-trash-can text-xs"></i>
+                </button>
+            </div>
 
             <div id="toolbar" class="h-10 bg-[#2d2d2d] border-b border-[#3e3e42] flex items-center justify-between px-4 hidden">
                 <div class="flex items-center gap-2 text-sm">
@@ -130,6 +142,7 @@
             tabs: [], 
             activeTab: null,
             currentTestId: null,
+            searchTimer: null,
 
             async init() {
                 const rootEl = document.getElementById('file-tree-root');
@@ -145,6 +158,25 @@
                     console.error(e);
                     this.updateStatus(false);
                 }
+            },
+
+            // Change 1: Search Logic (Debounced)
+            handleSearch(query) {
+                clearTimeout(this.searchTimer);
+                this.searchTimer = setTimeout(async () => {
+                    const rootEl = document.getElementById('file-tree-root');
+                    if (!query.trim()) {
+                        this.init(); // Reset to folders
+                        return;
+                    }
+                    rootEl.innerHTML = '<div class="pl-4 text-gray-500 text-xs"><i class="fa-solid fa-spinner spin"></i> Searching...</div>';
+                    try {
+                        const res = await fetch(`${API_URL}/search?q=${encodeURIComponent(query)}`);
+                        const items = await res.json();
+                        rootEl.innerHTML = '';
+                        this.renderChildren(items, rootEl, 0, true);
+                    } catch (e) { rootEl.innerHTML = '<div class="pl-4 text-red-500">Search Failed</div>'; }
+                }, 300);
             },
 
             updateStatus(online) {
@@ -182,32 +214,36 @@
                 }
             },
 
-            renderChildren(items, container, depth) {
+            renderChildren(items, container, depth, isSearch = false) {
                 if(items.length === 0) {
-                    container.innerHTML = `<div class="py-1 text-gray-600 italic" style="padding-left:${(depth+1)*12 + 12}px">Empty</div>`;
+                    container.innerHTML += `<div class="py-1 text-gray-600 italic" style="padding-left:${(depth+1)*12 + 12}px">No results</div>`;
                     return;
                 }
                 items.forEach((item, index) => {
                     const uniqueId = `node-${item.path.replace(/[^a-zA-Z0-9]/g, '-')}-${index}`; 
-                    const padding = (depth * 12) + 12;
+                    // Flatten padding for search results to look cleaner
+                    const padding = isSearch ? 12 : (depth * 12) + 12; 
                     const itemDiv = document.createElement('div');
-                    if (item.type === 'dir') {
+                    
+                    if (item.type === 'dir' && !isSearch) {
                         itemDiv.innerHTML = `
                             <div>
                                 <div class="flex items-center py-1 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors" style="padding-left:${padding}px" onclick="app.toggleFolder('${item.path}', '${uniqueId}')">
                                     <i id="icon-${uniqueId}" class="fa-solid fa-chevron-right text-[10px] w-4 text-center mr-1 transition-transform"></i>
                                     <i class="fa-solid fa-folder text-yellow-600 text-xs mr-2"></i>
-                                    <span class="truncate">${item.name}</span>
+                                    <span class="truncate" title="${item.name}">${item.name}</span>
                                 </div>
                                 <div id="${uniqueId}" data-depth="${depth+1}" class="hidden"></div>
                             </div>`;
-                    } else {
+                    } else if (item.type !== 'dir') {
                         const isIni = item.name.toLowerCase().endsWith('.ini');
+                        // Change 2: Added title attribute for hover
                         itemDiv.innerHTML = `
-                            <div class="group flex items-center justify-between py-1 pr-2 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors" style="padding-left:${padding + 14}px" onclick="app.loadFile('${item.path}')">
-                                <div class="flex items-center gap-2 truncate flex-1">
+                            <div class="group flex items-center justify-between py-1 pr-2 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors" style="padding-left:${padding + (isSearch ? 0 : 14)}px" onclick="app.loadFile('${item.path}')">
+                                <div class="flex items-center gap-2 truncate flex-1" title="${item.name}">
                                     <i class="fa-regular fa-file-lines text-blue-400 text-xs"></i> 
                                     <span class="truncate">${item.name}</span>
+                                    ${isSearch ? `<span class="text-[10px] text-gray-600 ml-2 truncate">${item.path}</span>` : ''}
                                 </div>
                                 <div class="hidden group-hover:flex gap-1">
                                     ${isIni ? `<button onclick="app.runTest('${item.path}', event)" title="Run Test" class="bg-green-700 hover:bg-green-600 text-white px-1.5 rounded text-[10px]"><i class="fa-solid fa-play"></i></button>` : ''}
@@ -220,6 +256,12 @@
             },
 
             async loadFile(path) {
+                // Change 4: Open .py, .xml, .yaml externally
+                if (path.match(/\.(py|xml|yaml|yml)$/i)) {
+                    this.openExternal(path);
+                    return;
+                }
+
                 const existingTab = this.tabs.find(t => t.path === path);
                 if (existingTab) {
                     this.activateTab(path);
@@ -258,12 +300,20 @@
                     this.renderEditor();
                 }
             },
+            
+            // Change 3: Close All Logic
+            closeAllTabs() {
+                this.tabs = [];
+                this.activeTab = null;
+                this.renderTabs();
+                this.renderEditor();
+            },
 
             renderTabs() {
                 const container = document.getElementById('tabs-container');
                 container.innerHTML = this.tabs.map(t => `
                     <div class="tab flex items-center justify-between px-3 text-xs cursor-pointer shrink-0 ${this.activeTab && this.activeTab.path === t.path ? 'active' : ''}" onclick="app.activateTab('${t.path}')">
-                        <span class="truncate mr-2">${t.name}</span>
+                        <span class="truncate mr-2" title="${t.path}">${t.name}</span>
                         <i class="fa-solid fa-xmark hover:text-white rounded p-0.5" onclick="app.closeTab('${t.path}', event)"></i>
                     </div>
                 `).join('');
