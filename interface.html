@@ -29,7 +29,7 @@
 
     <header class="bg-[#252526] border-b border-[#3e3e42] h-10 flex items-center justify-between px-4 shrink-0 select-none">
         <div class="flex items-center gap-2 text-sm font-semibold text-gray-200">
-            <i class="fa-solid fa-flask text-purple-500"></i> <span>FlowSim Tests Manager</span>
+            <span>FlowSim Tests Manager</span>
         </div>
 
         <div class="flex items-center gap-3">
@@ -75,15 +75,17 @@
                 <div class="text-xs font-bold text-gray-500 uppercase mb-2">Explorer</div>
                 <div class="relative">
                     <input type="text" id="search-input" placeholder="Search files..." onkeyup="app.handleSearch(this.value)" class="w-full bg-[#1e1e1e] text-gray-300 text-xs border border-[#3e3e42] rounded px-2 py-1 pr-12 focus:outline-none focus:border-blue-500">
-                    
                     <button id="search-clear" onclick="app.clearSearch()" class="hidden absolute right-6 top-0 h-full px-2 text-gray-500 hover:text-gray-200" title="Clear Search">
                         <i class="fa-solid fa-xmark text-[10px]"></i>
                     </button>
-                    
                     <i class="fa-solid fa-search absolute right-2 top-1.5 text-gray-500 text-[10px]"></i>
                 </div>
             </div>
-            <div id="file-tree-root" class="flex-1 overflow-y-auto py-2 text-sm"></div>
+            
+            <div id="explorer-body" class="flex-1 overflow-y-auto py-2 text-sm">
+                <div id="file-tree-base"></div>
+                <div id="search-results" class="hidden"></div>
+            </div>
         </aside>
 
         <div class="resizer-col" id="resizer-side"></div>
@@ -145,10 +147,11 @@
             activeTab: null,
             currentTestId: null,
             searchTimer: null,
-            searchController: null, // Change 4a: Add AbortController
+            searchController: null, 
 
             async init() {
-                const rootEl = document.getElementById('file-tree-root');
+                // Change 3: Init now targets base tree only
+                const rootEl = document.getElementById('file-tree-base');
                 rootEl.innerHTML = ''; 
                 try {
                     const res = await fetch(`${API_URL}/files`);
@@ -163,54 +166,56 @@
                 }
             },
 
-            // Change 4b: Complete rewrite of handleSearch to fix race conditions & UI
             handleSearch(query) {
                 const clearBtn = document.getElementById('search-clear');
-                const rootEl = document.getElementById('file-tree-root');
+                const treeBase = document.getElementById('file-tree-base');
+                const searchRes = document.getElementById('search-results');
 
-                // Toggle X button visibility
                 if (query.trim().length > 0) {
                     clearBtn.classList.remove('hidden');
+                    // Show search, hide tree
+                    treeBase.classList.add('hidden');
+                    searchRes.classList.remove('hidden');
                 } else {
-                    clearBtn.classList.add('hidden');
-                    this.init(); // Restore original view immediately if empty
+                    // Restore original view state
+                    this.clearSearchState();
                     return;
                 }
 
-                // 1. Cancel any previous pending search requests
-                if (this.searchController) {
-                    this.searchController.abort();
-                }
-
-                // 2. Cancel pending timeout
+                if (this.searchController) this.searchController.abort();
                 clearTimeout(this.searchTimer);
 
-                // 3. Set new timeout (debounce)
+                // Change 4: Faster Debounce (150ms)
                 this.searchTimer = setTimeout(async () => {
-                    // Create new controller for this specific request
                     this.searchController = new AbortController();
                     const signal = this.searchController.signal;
 
-                    rootEl.innerHTML = '<div class="pl-4 text-gray-500 text-xs"><i class="fa-solid fa-spinner spin"></i> Searching...</div>';
+                    searchRes.innerHTML = '<div class="pl-4 text-gray-500 text-xs"><i class="fa-solid fa-spinner spin"></i> Searching...</div>';
                     
                     try {
                         const res = await fetch(`${API_URL}/search?q=${encodeURIComponent(query)}`, { signal });
                         const items = await res.json();
-                        rootEl.innerHTML = '';
-                        this.renderChildren(items, rootEl, 0, true);
+                        searchRes.innerHTML = '';
+                        this.renderChildren(items, searchRes, 0, true);
                     } catch (e) { 
-                        if (e.name === 'AbortError') return; // Ignore aborted requests
-                        rootEl.innerHTML = '<div class="pl-4 text-red-500">Search Failed</div>'; 
+                        if (e.name === 'AbortError') return; 
+                        searchRes.innerHTML = '<div class="pl-4 text-red-500">Search Failed</div>'; 
                     }
-                }, 400); // Slightly increased debounce to 400ms
+                }, 150); 
             },
 
-            // Change 4c: New function to reset search
+            // Change 5: Helper to reset UI without re-init
+            clearSearchState() {
+                document.getElementById('search-clear').classList.add('hidden');
+                document.getElementById('file-tree-base').classList.remove('hidden');
+                document.getElementById('search-results').classList.add('hidden');
+                document.getElementById('search-results').innerHTML = ''; // Clean up
+            },
+
             clearSearch() {
                 document.getElementById('search-input').value = '';
-                document.getElementById('search-clear').classList.add('hidden');
                 if (this.searchController) this.searchController.abort();
-                this.init();
+                this.clearSearchState();
             },
 
             updateStatus(online) {
@@ -254,7 +259,8 @@
                     return;
                 }
                 items.forEach((item, index) => {
-                    const uniqueId = `node-${item.path.replace(/[^a-zA-Z0-9]/g, '-')}-${index}`; 
+                    // Unique ID generation to safely allow both trees if needed
+                    const uniqueId = `node-${(isSearch ? 's-' : '')}${item.path.replace(/[^a-zA-Z0-9]/g, '-')}-${index}`; 
                     const padding = isSearch ? 12 : (depth * 12) + 12; 
                     const itemDiv = document.createElement('div');
                     
