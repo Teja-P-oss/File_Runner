@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FlowSim Tests Manager</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧪</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -16,12 +15,10 @@
         .spin { animation: spin 1s linear infinite; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
         
-        /* Tab Styles */
         .tab { background: #2d2d2d; color: #9ca3af; border-right: 1px solid #1e1e1e; max-width: 150px; }
         .tab.active { background: #1e1e1e; color: #e5e7eb; border-top: 2px solid #4ec9b0; }
         .tab:hover:not(.active) { background: #3e3e42; }
 
-        /* Resizers */
         .resizer-col { width: 4px; cursor: col-resize; background: #3e3e42; transition: background 0.2s; }
         .resizer-col:hover, .resizer-col.resizing { background: #007fd4; }
         .resizer-row { height: 4px; cursor: row-resize; background: #3e3e42; transition: background 0.2s; }
@@ -77,7 +74,12 @@
             <div class="px-4 py-2 border-b border-[#3e3e42]">
                 <div class="text-xs font-bold text-gray-500 uppercase mb-2">Explorer</div>
                 <div class="relative">
-                    <input type="text" id="search-input" placeholder="Search files..." onkeyup="app.handleSearch(this.value)" class="w-full bg-[#1e1e1e] text-gray-300 text-xs border border-[#3e3e42] rounded px-2 py-1 focus:outline-none focus:border-blue-500">
+                    <input type="text" id="search-input" placeholder="Search files..." onkeyup="app.handleSearch(this.value)" class="w-full bg-[#1e1e1e] text-gray-300 text-xs border border-[#3e3e42] rounded px-2 py-1 pr-12 focus:outline-none focus:border-blue-500">
+                    
+                    <button id="search-clear" onclick="app.clearSearch()" class="hidden absolute right-6 top-0 h-full px-2 text-gray-500 hover:text-gray-200" title="Clear Search">
+                        <i class="fa-solid fa-xmark text-[10px]"></i>
+                    </button>
+                    
                     <i class="fa-solid fa-search absolute right-2 top-1.5 text-gray-500 text-[10px]"></i>
                 </div>
             </div>
@@ -143,6 +145,7 @@
             activeTab: null,
             currentTestId: null,
             searchTimer: null,
+            searchController: null, // Change 4a: Add AbortController
 
             async init() {
                 const rootEl = document.getElementById('file-tree-root');
@@ -160,23 +163,54 @@
                 }
             },
 
-            // Change 1: Search Logic (Debounced)
+            // Change 4b: Complete rewrite of handleSearch to fix race conditions & UI
             handleSearch(query) {
+                const clearBtn = document.getElementById('search-clear');
+                const rootEl = document.getElementById('file-tree-root');
+
+                // Toggle X button visibility
+                if (query.trim().length > 0) {
+                    clearBtn.classList.remove('hidden');
+                } else {
+                    clearBtn.classList.add('hidden');
+                    this.init(); // Restore original view immediately if empty
+                    return;
+                }
+
+                // 1. Cancel any previous pending search requests
+                if (this.searchController) {
+                    this.searchController.abort();
+                }
+
+                // 2. Cancel pending timeout
                 clearTimeout(this.searchTimer);
+
+                // 3. Set new timeout (debounce)
                 this.searchTimer = setTimeout(async () => {
-                    const rootEl = document.getElementById('file-tree-root');
-                    if (!query.trim()) {
-                        this.init(); // Reset to folders
-                        return;
-                    }
+                    // Create new controller for this specific request
+                    this.searchController = new AbortController();
+                    const signal = this.searchController.signal;
+
                     rootEl.innerHTML = '<div class="pl-4 text-gray-500 text-xs"><i class="fa-solid fa-spinner spin"></i> Searching...</div>';
+                    
                     try {
-                        const res = await fetch(`${API_URL}/search?q=${encodeURIComponent(query)}`);
+                        const res = await fetch(`${API_URL}/search?q=${encodeURIComponent(query)}`, { signal });
                         const items = await res.json();
                         rootEl.innerHTML = '';
                         this.renderChildren(items, rootEl, 0, true);
-                    } catch (e) { rootEl.innerHTML = '<div class="pl-4 text-red-500">Search Failed</div>'; }
-                }, 300);
+                    } catch (e) { 
+                        if (e.name === 'AbortError') return; // Ignore aborted requests
+                        rootEl.innerHTML = '<div class="pl-4 text-red-500">Search Failed</div>'; 
+                    }
+                }, 400); // Slightly increased debounce to 400ms
+            },
+
+            // Change 4c: New function to reset search
+            clearSearch() {
+                document.getElementById('search-input').value = '';
+                document.getElementById('search-clear').classList.add('hidden');
+                if (this.searchController) this.searchController.abort();
+                this.init();
             },
 
             updateStatus(online) {
@@ -221,7 +255,6 @@
                 }
                 items.forEach((item, index) => {
                     const uniqueId = `node-${item.path.replace(/[^a-zA-Z0-9]/g, '-')}-${index}`; 
-                    // Flatten padding for search results to look cleaner
                     const padding = isSearch ? 12 : (depth * 12) + 12; 
                     const itemDiv = document.createElement('div');
                     
@@ -237,7 +270,6 @@
                             </div>`;
                     } else if (item.type !== 'dir') {
                         const isIni = item.name.toLowerCase().endsWith('.ini');
-                        // Change 2: Added title attribute for hover
                         itemDiv.innerHTML = `
                             <div class="group flex items-center justify-between py-1 pr-2 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors" style="padding-left:${padding + (isSearch ? 0 : 14)}px" onclick="app.loadFile('${item.path}')">
                                 <div class="flex items-center gap-2 truncate flex-1" title="${item.name}">
@@ -256,7 +288,6 @@
             },
 
             async loadFile(path) {
-                // Change 4: Open .py, .xml, .yaml externally
                 if (path.match(/\.(py|xml|yaml|yml)$/i)) {
                     this.openExternal(path);
                     return;
@@ -301,7 +332,6 @@
                 }
             },
             
-            // Change 3: Close All Logic
             closeAllTabs() {
                 this.tabs = [];
                 this.activeTab = null;
