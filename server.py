@@ -50,6 +50,34 @@ def list_files():
     else:
         return jsonify(get_directory_contents(req_path))
 
+# Change 1: Added Search Endpoint (Optimized for allowed roots)
+@app.route('/api/search', methods=['GET'])
+def search_files():
+    query = request.args.get('q', '').lower()
+    if not query or len(query) < 2: 
+        return jsonify([])
+    
+    results = []
+    # Only search within allowed roots to limit scope
+    for root_folder in ALLOWED_ROOTS:
+        start_dir = os.path.join(ROOT_DIR, root_folder)
+        if not os.path.exists(start_dir): continue
+        
+        for dirpath, dirnames, filenames in os.walk(start_dir):
+            # Check filenames
+            for f in filenames:
+                if query in f.lower():
+                    full_p = os.path.join(dirpath, f)
+                    rel_p = os.path.relpath(full_p, ROOT_DIR).replace("\\", "/")
+                    results.append({"name": f, "path": rel_p, "type": "file"})
+            
+            # Optional: Limit results to avoid massive payloads
+            if len(results) > 100: 
+                break
+        if len(results) > 100: break
+            
+    return jsonify(results)
+
 @app.route('/api/read', methods=['GET'])
 def read_file():
     rel_path = request.args.get('path')
