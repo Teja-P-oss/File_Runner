@@ -15,12 +15,10 @@
         .spin { animation: spin 1s linear infinite; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
         
-        /* Tab Styles */
         .tab { background: #2d2d2d; color: #9ca3af; border-right: 1px solid #1e1e1e; max-width: 150px; }
         .tab.active { background: #1e1e1e; color: #e5e7eb; border-top: 2px solid #4ec9b0; }
         .tab:hover:not(.active) { background: #3e3e42; }
 
-        /* Resizers */
         .resizer-col { width: 4px; cursor: col-resize; background: #3e3e42; transition: background 0.2s; }
         .resizer-col:hover, .resizer-col.resizing { background: #007fd4; }
         .resizer-row { height: 4px; cursor: row-resize; background: #3e3e42; transition: background 0.2s; }
@@ -31,7 +29,7 @@
 
     <header class="bg-[#252526] border-b border-[#3e3e42] h-10 flex items-center justify-between px-4 shrink-0 select-none">
         <div class="flex items-center gap-2 text-sm font-semibold text-gray-200">
-            <i class="fa-solid fa-flask text-purple-500"></i> <span>FlowSim Tests Manager</span>
+            <span>FlowSim Tests Manager</span>
         </div>
 
         <div class="flex items-center gap-3">
@@ -73,15 +71,33 @@
     <div class="flex-1 flex overflow-hidden" id="main-layout">
         
         <aside id="sidebar" class="w-80 bg-[#252526] flex flex-col shrink-0" style="width: 320px;">
-            <div class="px-4 py-2 text-xs font-bold text-gray-500 uppercase border-b border-[#3e3e42]">Explorer</div>
-            <div id="file-tree-root" class="flex-1 overflow-y-auto py-2 text-sm"></div>
+            <div class="px-4 py-2 border-b border-[#3e3e42]">
+                <div class="text-xs font-bold text-gray-500 uppercase mb-2">Explorer</div>
+                <div class="relative">
+                    <input type="text" id="search-input" placeholder="Search files..." onkeyup="app.handleSearch(this.value)" class="w-full bg-[#1e1e1e] text-gray-300 text-xs border border-[#3e3e42] rounded px-2 py-1 pr-12 focus:outline-none focus:border-blue-500">
+                    <button id="search-clear" onclick="app.clearSearch()" class="hidden absolute right-6 top-0 h-full px-2 text-gray-500 hover:text-gray-200" title="Clear Search">
+                        <i class="fa-solid fa-xmark text-[10px]"></i>
+                    </button>
+                    <i class="fa-solid fa-search absolute right-2 top-1.5 text-gray-500 text-[10px]"></i>
+                </div>
+            </div>
+            
+            <div id="explorer-body" class="flex-1 overflow-y-auto py-2 text-sm">
+                <div id="file-tree-base"></div>
+                <div id="search-results" class="hidden"></div>
+            </div>
         </aside>
 
         <div class="resizer-col" id="resizer-side"></div>
 
         <main class="flex-1 flex flex-col min-w-0 bg-[#1e1e1e]">
             
-            <div id="tabs-container" class="h-9 bg-[#252526] flex overflow-x-auto overflow-y-hidden select-none scrollbar-hide"></div>
+            <div class="flex bg-[#252526] h-9">
+                <div id="tabs-container" class="flex-1 flex overflow-x-auto overflow-y-hidden select-none scrollbar-hide"></div>
+                <button onclick="app.closeAllTabs()" title="Close All" class="px-3 hover:bg-red-900/50 text-gray-400 hover:text-white border-l border-[#3e3e42] flex items-center">
+                    <i class="fa-solid fa-trash-can text-xs"></i>
+                </button>
+            </div>
 
             <div id="toolbar" class="h-10 bg-[#2d2d2d] border-b border-[#3e3e42] flex items-center justify-between px-4 hidden">
                 <div class="flex items-center gap-2 text-sm">
@@ -92,6 +108,7 @@
                     </span>
                 </div>
                 <div class="flex gap-2">
+                    <button onclick="app.runCurrentTest()" id="btn-run-nav" class="hidden px-3 py-1 text-xs bg-green-700 hover:bg-green-600 text-white rounded transition mr-2"><i class="fa-solid fa-play mr-1"></i>Run Test</button>
                     <button onclick="app.saveCurrent()" id="btn-save" class="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded transition disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
                 </div>
             </div>
@@ -130,9 +147,11 @@
             tabs: [], 
             activeTab: null,
             currentTestId: null,
+            searchTimer: null,
+            searchController: null, 
 
             async init() {
-                const rootEl = document.getElementById('file-tree-root');
+                const rootEl = document.getElementById('file-tree-base');
                 rootEl.innerHTML = ''; 
                 try {
                     const res = await fetch(`${API_URL}/files`);
@@ -145,6 +164,54 @@
                     console.error(e);
                     this.updateStatus(false);
                 }
+            },
+
+            handleSearch(query) {
+                const clearBtn = document.getElementById('search-clear');
+                const treeBase = document.getElementById('file-tree-base');
+                const searchRes = document.getElementById('search-results');
+
+                if (query.trim().length > 0) {
+                    clearBtn.classList.remove('hidden');
+                    treeBase.classList.add('hidden');
+                    searchRes.classList.remove('hidden');
+                } else {
+                    this.clearSearchState();
+                    return;
+                }
+
+                if (this.searchController) this.searchController.abort();
+                clearTimeout(this.searchTimer);
+
+                this.searchTimer = setTimeout(async () => {
+                    this.searchController = new AbortController();
+                    const signal = this.searchController.signal;
+
+                    searchRes.innerHTML = '<div class="pl-4 text-gray-500 text-xs"><i class="fa-solid fa-spinner spin"></i> Searching...</div>';
+                    
+                    try {
+                        const res = await fetch(`${API_URL}/search?q=${encodeURIComponent(query)}`, { signal });
+                        const items = await res.json();
+                        searchRes.innerHTML = '';
+                        this.renderChildren(items, searchRes, 0, true);
+                    } catch (e) { 
+                        if (e.name === 'AbortError') return; 
+                        searchRes.innerHTML = '<div class="pl-4 text-red-500">Search Failed</div>'; 
+                    }
+                }, 150); 
+            },
+
+            clearSearchState() {
+                document.getElementById('search-clear').classList.add('hidden');
+                document.getElementById('file-tree-base').classList.remove('hidden');
+                document.getElementById('search-results').classList.add('hidden');
+                document.getElementById('search-results').innerHTML = '';
+            },
+
+            clearSearch() {
+                document.getElementById('search-input').value = '';
+                if (this.searchController) this.searchController.abort();
+                this.clearSearchState();
             },
 
             updateStatus(online) {
@@ -182,32 +249,34 @@
                 }
             },
 
-            renderChildren(items, container, depth) {
+            renderChildren(items, container, depth, isSearch = false) {
                 if(items.length === 0) {
-                    container.innerHTML = `<div class="py-1 text-gray-600 italic" style="padding-left:${(depth+1)*12 + 12}px">Empty</div>`;
+                    container.innerHTML += `<div class="py-1 text-gray-600 italic" style="padding-left:${(depth+1)*12 + 12}px">No results</div>`;
                     return;
                 }
                 items.forEach((item, index) => {
-                    const uniqueId = `node-${item.path.replace(/[^a-zA-Z0-9]/g, '-')}-${index}`; 
-                    const padding = (depth * 12) + 12;
+                    const uniqueId = `node-${(isSearch ? 's-' : '')}${item.path.replace(/[^a-zA-Z0-9]/g, '-')}-${index}`; 
+                    const padding = isSearch ? 12 : (depth * 12) + 12; 
                     const itemDiv = document.createElement('div');
-                    if (item.type === 'dir') {
+                    
+                    if (item.type === 'dir' && !isSearch) {
                         itemDiv.innerHTML = `
                             <div>
                                 <div class="flex items-center py-1 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors" style="padding-left:${padding}px" onclick="app.toggleFolder('${item.path}', '${uniqueId}')">
                                     <i id="icon-${uniqueId}" class="fa-solid fa-chevron-right text-[10px] w-4 text-center mr-1 transition-transform"></i>
                                     <i class="fa-solid fa-folder text-yellow-600 text-xs mr-2"></i>
-                                    <span class="truncate">${item.name}</span>
+                                    <span class="truncate" title="${item.name}">${item.name}</span>
                                 </div>
                                 <div id="${uniqueId}" data-depth="${depth+1}" class="hidden"></div>
                             </div>`;
-                    } else {
+                    } else if (item.type !== 'dir') {
                         const isIni = item.name.toLowerCase().endsWith('.ini');
                         itemDiv.innerHTML = `
-                            <div class="group flex items-center justify-between py-1 pr-2 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors" style="padding-left:${padding + 14}px" onclick="app.loadFile('${item.path}')">
-                                <div class="flex items-center gap-2 truncate flex-1">
+                            <div class="group flex items-center justify-between py-1 pr-2 hover:bg-[#37373d] cursor-pointer text-gray-400 hover:text-gray-100 transition-colors" style="padding-left:${padding + (isSearch ? 0 : 14)}px" onclick="app.loadFile('${item.path}')">
+                                <div class="flex items-center gap-2 truncate flex-1" title="${item.name}">
                                     <i class="fa-regular fa-file-lines text-blue-400 text-xs"></i> 
                                     <span class="truncate">${item.name}</span>
+                                    ${isSearch ? `<span class="text-[10px] text-gray-600 ml-2 truncate">${item.path}</span>` : ''}
                                 </div>
                                 <div class="hidden group-hover:flex gap-1">
                                     ${isIni ? `<button onclick="app.runTest('${item.path}', event)" title="Run Test" class="bg-green-700 hover:bg-green-600 text-white px-1.5 rounded text-[10px]"><i class="fa-solid fa-play"></i></button>` : ''}
@@ -220,6 +289,11 @@
             },
 
             async loadFile(path) {
+                if (path.match(/\.(py|xml|yaml|yml)$/i)) {
+                    this.openExternal(path);
+                    return;
+                }
+
                 const existingTab = this.tabs.find(t => t.path === path);
                 if (existingTab) {
                     this.activateTab(path);
@@ -258,12 +332,19 @@
                     this.renderEditor();
                 }
             },
+            
+            closeAllTabs() {
+                this.tabs = [];
+                this.activeTab = null;
+                this.renderTabs();
+                this.renderEditor();
+            },
 
             renderTabs() {
                 const container = document.getElementById('tabs-container');
                 container.innerHTML = this.tabs.map(t => `
                     <div class="tab flex items-center justify-between px-3 text-xs cursor-pointer shrink-0 ${this.activeTab && this.activeTab.path === t.path ? 'active' : ''}" onclick="app.activateTab('${t.path}')">
-                        <span class="truncate mr-2">${t.name}</span>
+                        <span class="truncate mr-2" title="${t.path}">${t.name}</span>
                         <i class="fa-solid fa-xmark hover:text-white rounded p-0.5" onclick="app.closeTab('${t.path}', event)"></i>
                     </div>
                 `).join('');
@@ -288,7 +369,14 @@
 
                 const badge = document.getElementById('lock-badge');
                 const saveBtn = document.getElementById('btn-save');
+                const runBtn = document.getElementById('btn-run-nav');
                 
+                if(this.activeTab.path.toLowerCase().endsWith('.ini')) {
+                    runBtn.classList.remove('hidden');
+                } else {
+                    runBtn.classList.add('hidden');
+                }
+
                 if(this.activeTab.locked) {
                     badge.classList.remove('hidden');
                     saveBtn.disabled = true;
@@ -302,10 +390,17 @@
             },
 
             parseContent(text) {
-                return text.replace(/(=\s*)(Calibration[\\\/][^\s\r\n]+)/g, (match, prefix, path) => {
+                let html = text.replace(/(=\s*)(Calibration[\\\/][^\s\r\n]+)/g, (match, prefix, path) => {
                     const safePath = path.replace(/\\/g, '\\\\');
                     return `${prefix}<span class="config-link" onclick="app.openExternal('${safePath}')">${path}</span>`;
                 });
+                
+                html = html.replace(/(=\s*)([a-zA-Z_][\w]*(?:\.[\w]+)+)/g, (match, prefix, dotPath) => {
+                    const relPath = 'src/' + dotPath.replace(/\./g, '/') + '.py';
+                    return `${prefix}<span class="config-link" onclick="app.openExternal('${relPath}')">${dotPath}</span>`;
+                });
+                
+                return html;
             },
 
             async unlockCurrent() {
@@ -337,6 +432,10 @@
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ path })
                 });
+            },
+
+            runCurrentTest() {
+                if(this.activeTab) this.runTest(this.activeTab.path);
             },
 
             async runTest(path, e) {
