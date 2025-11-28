@@ -459,6 +459,9 @@
                     stopBtn.classList.add('hidden');
                     this.currentTestId = null;
                     term.scrollTop = term.scrollHeight;
+
+                    const c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator();
+                    o.connect(c.destination); o.start(); o.stop(c.currentTime + 0.15); //beep sound
                 }
             },
 
