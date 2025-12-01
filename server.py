@@ -9,8 +9,8 @@ from flask_cors import CORS
 # Configuration
 app = Flask(__name__)
 CORS(app)
-ROOT_DIR = os.getcwd()
-
+#ROOT_DIR = os.getcwd() 
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Allowed root directories
 ALLOWED_ROOTS = ['Tests', 'Calibration', 'Interfaces']
 
