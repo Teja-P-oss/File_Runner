@@ -9,8 +9,10 @@ from flask_cors import CORS
 # Configuration
 app = Flask(__name__)
 CORS(app)
-#ROOT_DIR = os.getcwd() 
+
+# Point to the parent directory (Project Root) instead of current working dir
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # Allowed root directories
 ALLOWED_ROOTS = ['Tests', 'Calibration', 'Interfaces']
 
@@ -50,7 +52,6 @@ def list_files():
     else:
         return jsonify(get_directory_contents(req_path))
 
-# Change 1: Added Search Endpoint (Optimized for allowed roots)
 @app.route('/api/search', methods=['GET'])
 def search_files():
     query = request.args.get('q', '').lower()
@@ -58,20 +59,17 @@ def search_files():
         return jsonify([])
     
     results = []
-    # Only search within allowed roots to limit scope
     for root_folder in ALLOWED_ROOTS:
         start_dir = os.path.join(ROOT_DIR, root_folder)
         if not os.path.exists(start_dir): continue
         
         for dirpath, dirnames, filenames in os.walk(start_dir):
-            # Check filenames
             for f in filenames:
                 if query in f.lower():
                     full_p = os.path.join(dirpath, f)
                     rel_p = os.path.relpath(full_p, ROOT_DIR).replace("\\", "/")
                     results.append({"name": f, "path": rel_p, "type": "file"})
             
-            # Optional: Limit results to avoid massive payloads
             if len(results) > 100: 
                 break
         if len(results) > 100: break
@@ -118,12 +116,11 @@ def run_test():
     data = request.json
     target_file = os.path.join(ROOT_DIR, data['target'])
     script_path = os.path.join(ROOT_DIR, 'src', 'main.py')
-    test_id = data.get('testId') # Frontend provides ID to allow stopping
+    test_id = data.get('testId')
     
     cmd = [sys.executable, script_path, target_file]
     
     try:
-        # Use Popen to allow tracking
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if test_id:
             active_tests[test_id] = proc
@@ -146,7 +143,7 @@ def stop_test():
     if test_id in active_tests:
         proc = active_tests[test_id]
         try:
-            proc.kill() # Force kill
+            proc.kill() 
             del active_tests[test_id]
             return jsonify({"status": "stopped", "output": "\n[Process stopped by user]\n"})
         except Exception as e:
