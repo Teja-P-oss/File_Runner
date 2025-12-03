@@ -185,13 +185,29 @@ def sync_p4():
 
         depot_base = "//projects/camerasystems/PC-sim3.0/dev/FlowSim/"
         
-        # Condensed batch generation
-        bat_lines = ["@echo off", "title FlowSim P4 Sync", "echo.", "echo CWD: %CD%", "echo.", "echo Starting Sync...", "echo ---------------------------------------"]
+        # Batch generation: Force CWD and attempt to load P4 Config
+        bat_lines = [
+            "@echo off", 
+            "title FlowSim P4 Sync",
+            f"cd /d \"{ROOT_DIR}\"", 
+            "if exist p4config.txt set P4CONFIG=p4config.txt",
+            "if exist .p4config set P4CONFIG=.p4config",
+            "echo CWD: %CD%", 
+            "echo P4CONFIG: %P4CONFIG%",
+            "echo.",
+            "echo Starting Sync...", 
+            "echo ---------------------------------------"
+        ]
         
         for item in matches:
-            clean = item.lstrip('.').replace('\\', '/')
-            p4_path = f"{depot_base}{clean}{'' if os.path.splitext(clean)[1] else '/*'}"
-            bat_lines.extend([f"echo ^> p4 sync \"{p4_path}\"", f"p4 sync \"{p4_path}\""])
+            clean = item.lstrip('.').replace('\\', '/').rstrip('/')
+            # Determine if folder (/*) or file
+            suffix = "" if os.path.splitext(clean)[1] else "/*"
+            p4_path = f"{depot_base}{clean}{suffix}"
+            
+            # Use -d flag to force P4 to use ROOT_DIR context
+            cmd = f"p4 -d \"{ROOT_DIR}\" sync \"{p4_path}\""
+            bat_lines.extend([f"echo ^> {cmd}", cmd])
             
         bat_lines.extend(["echo.", "echo ---------------------------------------", "echo Sync Process Finished.", "pause"])
         
