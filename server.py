@@ -1,3 +1,4 @@
+import re
 import os
 import sys
 import stat
@@ -165,6 +166,58 @@ def open_external():
         return jsonify({"status": "opened"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+        
+@app.route('/api/p4-sync', methods=['POST'])
+def sync_p4():
+    data = request.json
+    rel_path = data.get('path')
+    full_path = os.path.join(ROOT_DIR, rel_path)
+    
+    if not os.path.exists(full_path):
+        return jsonify({"output": "Error: File not found on disk."})
+
+    try:
+        with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+
+        # Regex to find paths starting with optional dot, specific folders, mixed slashes
+        # Matches: .Calibration\..., Calibration/..., bin/..., .Content\..., Tests/...
+        pattern = r'(?:\.?)(?:Calibration|bin|Content|Tests)[\\/][\w\-\.\\/]+'
+        matches = re.findall(pattern, content, re.IGNORECASE)
+        
+        unique_paths = sorted(list(set(matches)))
+        if not unique_paths:
+            return jsonify({"output": "No syncable paths found in this file."})
+
+        log = [f"Found {len(unique_paths)} items to sync from P4..."]
+        depot_base = "//projects/camerasystems/PC-sim3.0/FlowSim/"
+
+        for item in unique_paths:
+            # Normalize path: remove leading dot, switch backslash to forward slash for P4
+            clean_item = item.lstrip('.').replace('\\', '/')
+            
+            # Detect if folder (no extension) or file
+            is_file = bool(os.path.splitext(clean_item)[1])
+            suffix = "" if is_file else "/*"
+            
+            p4_path = f"{depot_base}{clean_item}{suffix}"
+            cmd = ["p4", "sync", p4_path]
+            
+            log.append(f"> {' '.join(cmd)}")
+            
+            # execution
+            try:
+                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                if proc.stdout: log.append(proc.stdout.strip())
+                if proc.stderr: log.append(f"ERR: {proc.stderr.strip()}")
+            except FileNotFoundError:
+                log.append("Error: 'p4' command not found in system PATH.")
+                break
+
+        return jsonify({"output": "\n".join(log)})
+
+    except Exception as e:
+        return jsonify({"output": f"Error executing sync: {str(e)}"})
 
 if __name__ == '__main__':
     print(f"FlowSim Manager running in {ROOT_DIR}")
