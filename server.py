@@ -170,49 +170,35 @@ def open_external():
 @app.route('/api/p4-sync', methods=['POST'])
 def sync_p4():
     data = request.json
-    rel_path = data.get('path')
-    full_path = os.path.join(ROOT_DIR, rel_path)
+    full_path = os.path.join(ROOT_DIR, data.get('path', ''))
     
     if not os.path.exists(full_path):
         return jsonify({"output": "Error: File not found on disk."})
 
     try:
-        with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.read()
+        with open(full_path, 'r', encoding='utf-8', errors='ignore') as f: content = f.read()
 
         pattern = r'(?:\.?)(?:Calibration|bin|Content|Tests)[\\/][\w\-\.\\/]+'
-        matches = re.findall(pattern, content, re.IGNORECASE)
+        matches = sorted(list(set(re.findall(pattern, content, re.IGNORECASE))))
         
-        unique_paths = sorted(list(set(matches)))
-        if not unique_paths:
-            return jsonify({"output": "No syncable paths found in this file."})
+        if not matches: return jsonify({"output": "No syncable paths found in this file."})
 
-        # Updated depot path
         depot_base = "//projects/camerasystems/PC-sim3.0/dev/FlowSim/"
         
-        bat_lines = ["@echo off", "title FlowSim P4 Sync", "echo Parse complete. Starting Sync...", "echo."]
+        # Condensed batch generation
+        bat_lines = ["@echo off", "title FlowSim P4 Sync", "echo.", "echo CWD: %CD%", "echo.", "echo Starting Sync...", "echo ---------------------------------------"]
         
-        for item in unique_paths:
-            clean_item = item.lstrip('.').replace('\\', '/')
-            is_file = bool(os.path.splitext(clean_item)[1])
-            suffix = "" if is_file else "/*"
+        for item in matches:
+            clean = item.lstrip('.').replace('\\', '/')
+            p4_path = f"{depot_base}{clean}{'' if os.path.splitext(clean)[1] else '/*'}"
+            bat_lines.extend([f"echo ^> p4 sync \"{p4_path}\"", f"p4 sync \"{p4_path}\""])
             
-            p4_path = f"{depot_base}{clean_item}{suffix}"
-            bat_lines.append(f"echo Syncing: {clean_item}")
-            bat_lines.append(f"p4 sync \"{p4_path}\"")
-            
-        bat_lines.append("echo.")
-        bat_lines.append("echo ---------------------------------------")
-        bat_lines.append("echo Sync Process Finished.")
-        bat_lines.append("pause")
+        bat_lines.extend(["echo.", "echo ---------------------------------------", "echo Sync Process Finished.", "pause"])
         
         bat_path = os.path.join(ROOT_DIR, 'temp_p4_sync.bat')
-        with open(bat_path, 'w') as f:
-            f.write('\n'.join(bat_lines))
+        with open(bat_path, 'w') as f: f.write('\n'.join(bat_lines))
             
-        # Launches actual terminal window
         subprocess.Popen(['start', 'cmd', '/k', bat_path], shell=True)
-
         return jsonify({"output": "P4 Sync launched in external terminal."})
 
     except Exception as e:
