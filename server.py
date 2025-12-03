@@ -180,8 +180,6 @@ def sync_p4():
         with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
 
-        # Regex to find paths starting with optional dot, specific folders, mixed slashes
-        # Matches: .Calibration\..., Calibration/..., bin/..., .Content\..., Tests/...
         pattern = r'(?:\.?)(?:Calibration|bin|Content|Tests)[\\/][\w\-\.\\/]+'
         matches = re.findall(pattern, content, re.IGNORECASE)
         
@@ -189,36 +187,37 @@ def sync_p4():
         if not unique_paths:
             return jsonify({"output": "No syncable paths found in this file."})
 
-        log = [f"Found {len(unique_paths)} items to sync from P4..."]
-        depot_base = "//projects/camerasystems/PC-sim3.0/FlowSim/"
-
+        # Updated depot path
+        depot_base = "//projects/camerasystems/PC-sim3.0/dev/FlowSim/"
+        
+        bat_lines = ["@echo off", "title FlowSim P4 Sync", "echo Parse complete. Starting Sync...", "echo."]
+        
         for item in unique_paths:
-            # Normalize path: remove leading dot, switch backslash to forward slash for P4
             clean_item = item.lstrip('.').replace('\\', '/')
-            
-            # Detect if folder (no extension) or file
             is_file = bool(os.path.splitext(clean_item)[1])
             suffix = "" if is_file else "/*"
             
             p4_path = f"{depot_base}{clean_item}{suffix}"
-            cmd = ["p4", "sync", p4_path]
+            bat_lines.append(f"echo Syncing: {clean_item}")
+            bat_lines.append(f"p4 sync \"{p4_path}\"")
             
-            log.append(f"> {' '.join(cmd)}")
+        bat_lines.append("echo.")
+        bat_lines.append("echo ---------------------------------------")
+        bat_lines.append("echo Sync Process Finished.")
+        bat_lines.append("pause")
+        
+        bat_path = os.path.join(ROOT_DIR, 'temp_p4_sync.bat')
+        with open(bat_path, 'w') as f:
+            f.write('\n'.join(bat_lines))
             
-            # execution
-            try:
-                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                if proc.stdout: log.append(proc.stdout.strip())
-                if proc.stderr: log.append(f"ERR: {proc.stderr.strip()}")
-            except FileNotFoundError:
-                log.append("Error: 'p4' command not found in system PATH.")
-                break
+        # Launches actual terminal window
+        subprocess.Popen(['start', 'cmd', '/k', bat_path], shell=True)
 
-        return jsonify({"output": "\n".join(log)})
+        return jsonify({"output": "P4 Sync launched in external terminal."})
 
     except Exception as e:
-        return jsonify({"output": f"Error executing sync: {str(e)}"})
-
+        return jsonify({"output": f"Error initiating sync: {str(e)}"})
+        
 if __name__ == '__main__':
     print(f"FlowSim Manager running in {ROOT_DIR}")
     app.run(port=5000, debug=True, threaded=True)
