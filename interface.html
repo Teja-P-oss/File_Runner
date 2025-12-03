@@ -377,6 +377,22 @@
                 const badge = document.getElementById('lock-badge');
                 const saveBtn = document.getElementById('btn-save');
                 const runBtn = document.getElementById('btn-run-nav');
+                const syncBtn = document.getElementById('btn-sync');
+                const isIni = this.activeTab.path.toLowerCase().endsWith('.ini');
+
+                
+                if(isIni) {
+                    runBtn.classList.remove('hidden');
+                } else {
+                    runBtn.classList.add('hidden');
+                }
+            
+                
+                if(isIni) {
+                    syncBtn.classList.remove('hidden');
+                } else {
+                    syncBtn.classList.add('hidden');
+                }
                 
                 if(this.activeTab.path.toLowerCase().endsWith('.ini')) {
                     runBtn.classList.remove('hidden');
@@ -478,6 +494,26 @@
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ testId: this.currentTestId })
                 });
+            },
+
+            async syncP4() {
+                if(!this.activeTab) return;
+                
+                const term = document.getElementById('terminal-out');
+                term.innerText += `\n> Initiating P4 Sync parsing for ${this.activeTab.name}...\n`;
+                
+                try {
+                    const res = await fetch(`${API_URL}/p4-sync`, {
+                        method: 'POST', 
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ path: this.activeTab.path })
+                    });
+                    const data = await res.json();
+                    term.innerText += data.output + "\n-------------------\n";
+                    term.scrollTop = term.scrollHeight;
+                } catch(err) {
+                    term.innerText += `\nError: ${err.message}\n`;
+                }
             },
 
             copyPath(path, e) {
