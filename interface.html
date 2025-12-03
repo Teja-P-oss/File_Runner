@@ -496,7 +496,8 @@
                 if(!this.activeTab) return;
                 
                 const term = document.getElementById('terminal-out');
-                term.innerText += `\n> Initiating P4 Sync parsing for ${this.activeTab.name}...\n`;
+                // Clear previous output to indicate new action
+                term.innerText = `> Parsing ${this.activeTab.name} for P4 paths...\n`;
                 
                 try {
                     const res = await fetch(`${API_URL}/p4-sync`, {
@@ -505,8 +506,8 @@
                         body: JSON.stringify({ path: this.activeTab.path })
                     });
                     const data = await res.json();
-                    term.innerText += data.output + "\n-------------------\n";
-                    term.scrollTop = term.scrollHeight;
+                    // Just show the status message
+                    term.innerText += data.output + "\n";
                 } catch(err) {
                     term.innerText += `\nError: ${err.message}\n`;
                 }
