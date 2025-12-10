@@ -181,14 +181,20 @@ def sync_p4():
         pattern = r'(?:\.?)(?:Calibration|bin|Content|Tests)[\\/][\w\-\.\\/]+'
         matches = sorted(list(set(re.findall(pattern, content, re.IGNORECASE))))
         
-        if not matches: return jsonify({"output": "No syncable paths found in this file."})
-
         bat_lines = [f'cd /d "{ROOT_DIR}"']
         
-        for item in matches:
-            clean = item.lstrip('.').replace('\\', '/').rstrip('/')
-            suffix = "" if os.path.splitext(clean)[1] else "/..."
-            bat_lines.append(f'p4 sync "{clean}{suffix}"')
+        bat_lines.append('echo fetching source code from P4 first...')
+        
+        base_folders = ['Atlas_ref', 'Automation', 'bin', 'Docs', 'Interfaces', 'Scripts', 'src', 'Tests']
+        for folder in base_folders:
+            bat_lines.append(f'p4 sync "{folder}/..."')
+
+        if matches:
+            bat_lines.append(f'echo Syncing assets from {os.path.basename(full_path)}...')
+            for item in matches:
+                clean = item.lstrip('.').replace('\\', '/').rstrip('/')
+                suffix = "" if os.path.splitext(clean)[1] else "/..."
+                bat_lines.append(f'p4 sync "{clean}{suffix}"')
             
         bat_lines.append("pause")
         
