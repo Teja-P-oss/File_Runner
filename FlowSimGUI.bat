@@ -3,12 +3,11 @@ set "SCRIPT_DIR=%~dp0Scripts"
 
 echo [FlowSim GUI Setup]
 
-python -c "import flask" 2>NUL
-if %errorlevel% neq 0 pip install flask
+echo Installing requirements...
 
-python -c "import flask_cors" 2>NUL
-if %errorlevel% neq 0 pip install flask-cors
+python -m pip install -r "%~dp0requirements_py3.txt" --trusted-host pypi.org --trusted-host files.pythonhosted.org
 
+echo.
 echo Starting system...
 start "" "%SCRIPT_DIR%\interface.html"
 python "%SCRIPT_DIR%\server.py"
