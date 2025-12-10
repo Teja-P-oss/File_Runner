@@ -183,33 +183,14 @@ def sync_p4():
         
         if not matches: return jsonify({"output": "No syncable paths found in this file."})
 
-        depot_base = "//projects/camerasystems/PC-sim3.0/dev/FlowSim/"
-        
-        # Batch generation: Force CWD and attempt to load P4 Config
-        bat_lines = [
-            "@echo off", 
-            "title FlowSim P4 Sync",
-            f"cd /d \"{ROOT_DIR}\"", 
-            "if exist p4config.txt set P4CONFIG=p4config.txt",
-            "if exist .p4config set P4CONFIG=.p4config",
-            "echo CWD: %CD%", 
-            "echo P4CONFIG: %P4CONFIG%",
-            "echo.",
-            "echo Starting Sync...", 
-            "echo ---------------------------------------"
-        ]
+        bat_lines = [f'cd /d "{ROOT_DIR}"']
         
         for item in matches:
             clean = item.lstrip('.').replace('\\', '/').rstrip('/')
-            # Determine if folder (/*) or file
-            suffix = "" if os.path.splitext(clean)[1] else "/*"
-            p4_path = f"{depot_base}{clean}{suffix}"
+            suffix = "" if os.path.splitext(clean)[1] else "/..."
+            bat_lines.append(f'p4 sync "{clean}{suffix}"')
             
-            # Use -d flag to force P4 to use ROOT_DIR context
-            cmd = f"p4 -d \"{ROOT_DIR}\" sync \"{p4_path}\""
-            bat_lines.extend([f"echo ^> {cmd}", cmd])
-            
-        bat_lines.extend(["echo.", "echo ---------------------------------------", "echo Sync Process Finished.", "pause"])
+        bat_lines.append("pause")
         
         bat_path = os.path.join(ROOT_DIR, 'temp_p4_sync.bat')
         with open(bat_path, 'w') as f: f.write('\n'.join(bat_lines))
