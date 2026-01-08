@@ -170,42 +170,56 @@ def open_external():
 @app.route('/api/p4-sync', methods=['POST'])
 def sync_p4():
     data = request.json
-    full_path = os.path.join(ROOT_DIR, data.get('path', ''))
+    rel_path = data.get('path', '')
+    full_path = os.path.join(ROOT_DIR, rel_path)
     
-    if not os.path.exists(full_path):
-        return jsonify({"output": "Error: File not found on disk."})
+    matches = set()
+    visited = set()
 
-    try:
-        with open(full_path, 'r', encoding='utf-8', errors='ignore') as f: content = f.read()
-
-        pattern = r'(?:\.?)(?:Calibration|bin|Content|Tests)[\\/][\w\-\.\\/]+'
-        matches = sorted(list(set(re.findall(pattern, content, re.IGNORECASE))))
-        
-        bat_lines = [f'cd /d "{ROOT_DIR}"']
-        
-        bat_lines.append('echo fetching source code from P4 first...')
-        
-        base_folders = ['Atlas_ref', 'Automation', 'bin', 'Docs', 'Interfaces', 'Scripts', 'src', 'Tests']
-        for folder in base_folders:
-            bat_lines.append(f'p4 sync "{folder}/..."')
-
-        if matches:
-            bat_lines.append(f'echo Syncing assets from {os.path.basename(full_path)}...')
-            for item in matches:
-                clean = item.lstrip('.').replace('\\', '/').rstrip('/')
-                suffix = "" if os.path.splitext(clean)[1] else "/..."
-                bat_lines.append(f'p4 sync "{clean}{suffix}"')
+    def parse_file_recursive(file_p):
+        if file_p in visited or not os.path.exists(file_p):
+            return
+        visited.add(file_p)
+        try:
+            with open(file_p, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
             
-        bat_lines.append("pause")
-        
-        bat_path = os.path.join(ROOT_DIR, 'temp_p4_sync.bat')
-        with open(bat_path, 'w') as f: f.write('\n'.join(bat_lines))
+            # Existing asset detection logic
+            asset_pattern = r'(?:\.?)(?:Calibration|bin|Content|Tests)[\\/][\w\-\.\\/]+'
+            for m in re.findall(asset_pattern, content, re.IGNORECASE):
+                matches.add(m)
             
-        subprocess.Popen(['start', 'cmd', '/k', bat_path], shell=True)
-        return jsonify({"output": "P4 Sync launched in external terminal."})
+            # c2r_cfg detection logic (handles dots and slashes)
+            cfg_pattern = r'c2r_cfg\s*=\s*((?:\.?)[\\/\w\-\.\\/]+)'
+            for cfg_path in re.findall(cfg_pattern, content, re.IGNORECASE):
+                matches.add(cfg_path)
+                # Recurse into the config file
+                clean_cfg = cfg_path.lstrip('.').replace('\\', '/').strip('/')
+                sub_path = os.path.join(ROOT_DIR, clean_cfg)
+                parse_file_recursive(sub_path)
+        except: pass
 
-    except Exception as e:
-        return jsonify({"output": f"Error initiating sync: {str(e)}"})
+    # Parse if exists; if not, we still proceed to sync base folders
+    parse_file_recursive(full_path)
+    
+    bat_lines = [f'cd /d "{ROOT_DIR}"', 'echo Fetching from P4...']
+    
+    # Always sync base folders to fix missing local copy issues
+    base_folders = ['Atlas_ref', 'Automation', 'bin', 'Docs', 'Interfaces', 'Scripts', 'src', 'Tests']
+    for folder in base_folders:
+        bat_lines.append(f'p4 sync "{folder}/..."')
+
+    if matches:
+        for item in sorted(list(matches)):
+            clean = item.lstrip('.').replace('\\', '/').rstrip('/')
+            suffix = "" if os.path.splitext(clean)[1] else "/..."
+            bat_lines.append(f'p4 sync "{clean}{suffix}"')
+            
+    bat_lines.append("pause")
+    bat_path = os.path.join(ROOT_DIR, 'temp_p4_sync.bat')
+    with open(bat_path, 'w') as f: f.write('\n'.join(bat_lines))
+    subprocess.Popen(['start', 'cmd', '/k', bat_path], shell=True)
+    return jsonify({"output": "P4 Sync initiated."})
         
 if __name__ == '__main__':
     print(f"FlowSim Manager running in {ROOT_DIR}")
